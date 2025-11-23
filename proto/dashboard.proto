@@ -1,0 +1,64 @@
+syntax = "proto3";
+
+package dashboard;
+
+// The Service Definition
+service AnalyticsService {
+  // Pattern A: Big Data (Server-Side Processing)
+  // The server sorts/pages the data and returns a slice.
+  rpc GetShipments (ViewRequest) returns (ViewResponse);
+
+  // Pattern B: Small Data (Client-Side Processing)
+  // The server sends the full list once. Client sorts/pages.
+  rpc GetRegionStats (Empty) returns (RegionList);
+}
+
+message Empty {}
+
+// --- Request/Response for Pattern A ---
+
+message ViewRequest {
+  int32 page_number = 1;
+  int32 items_per_page = 2;
+  SortOption sort = 3;        // Optional
+  repeated FilterCriteria filters = 4;
+}
+
+message SortOption {
+  string column_id = 1;  // e.g., "cargoWeightKg"
+  bool is_ascending = 2;
+}
+
+message FilterCriteria {
+  string column_id = 1;
+  string filter_value = 2;
+  string operator = 3;
+}
+
+message ViewResponse {
+  repeated ShipmentRow rows = 1;
+  int32 total_row_count = 2;
+  int32 total_pages = 3;
+}
+
+message ShipmentRow {
+  string id = 1;
+  string container_number = 2;
+  string origin_port = 3;
+  string destination_port = 4;
+  string status = 5;
+  double cargo_weight_kg = 6;
+  int64 arrival_timestamp = 7; // Unix timestamp
+}
+
+// --- Request/Response for Pattern B ---
+
+message RegionList {
+  repeated RegionStat regions = 1;
+}
+
+message RegionStat {
+  string region_name = 1;
+  int32 active_shipments = 2;
+  double total_revenue = 3;
+}

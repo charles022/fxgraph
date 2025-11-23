@@ -1,5 +1,8 @@
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Compiles the proto file into Rust code
-    tonic_build::compile_protos("../proto/dashboard.proto")?;
+    // Use vendored protoc so the build works without a system install.
+    let protoc_path = protoc_bin_vendored::protoc_bin_path()?;
+    std::env::set_var("PROTOC", protoc_path);
+
+    tonic_build::configure().compile(&["../proto/dashboard.proto"], &["../proto"])?;
     Ok(())
 }

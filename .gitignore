@@ -1,0 +1,14 @@
+# Rust build outputs
+/backend/target
+
+# Node/NPM artifacts
+/frontend/node_modules
+/frontend/.next
+/frontend/.turbo
+/frontend/.eslintcache
+
+# Buf cache
+/frontend/.buf-cache
+
+# TypeScript build info
+*.tsbuildinfo

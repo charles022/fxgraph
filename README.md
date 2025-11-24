@@ -1,6 +1,7 @@
 
 
-
+Run with (from repo root)...
+./scripts/dev.sh
 
 Table of Contents:
   - OVERVIEW

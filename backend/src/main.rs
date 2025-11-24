@@ -19,6 +19,7 @@ struct MockShipment {
     status: String,
     cargo_weight_kg: f64,
     arrival_timestamp: i64,
+    facility_id: String,
 }
 
 // The "Database" struct
@@ -32,6 +33,7 @@ impl MyAnalytics {
         let mut rng = rand::thread_rng();
         let mut data = Vec::new();
         let statuses = vec!["On Time", "Delayed", "Customs Hold", "Arrived"];
+        let facilities = vec!["loc-1", "loc-2", "loc-3", "loc-4", "loc-5"];
 
         for i in 0..10000 {
             data.push(MockShipment {
@@ -39,7 +41,8 @@ impl MyAnalytics {
                 container_number: format!("CONT-{:05}", i),
                 status: statuses[rng.gen_range(0..4)].to_string(),
                 cargo_weight_kg: rng.gen_range(1000.0..50000.0),
-                arrival_timestamp: 1700000000 + rng.gen_range(0..10000000),
+                arrival_timestamp: 1700000000 + rng.gen_range(0..10000000), // ~Nov 2023 to Feb 2024
+                facility_id: facilities[rng.gen_range(0..5)].to_string(),
             });
         }
         println!("Initialized Mock Database with {} rows.", data.len());
@@ -77,15 +80,35 @@ impl AnalyticsService for MyAnalytics {
     async fn get_facility_stats(&self, request: Request<FacilityRequest>) -> Result<Response<FacilityStats>, Status> {
         let req = request.into_inner();
         let facility_id = req.facility_id;
-        let mut rng = rand::thread_rng();
         
+        // Define a 4-week window for the "current" period. 
+        // Based on mock data (1700000000 to 1710000000), let's pick a slice near the end.
+        // Week 1 starts: 1708000000
+        // Each week is 604800 seconds.
+        let start_time = 1708000000; 
+
         let mut weeks = Vec::new();
-        for w in 1..=4 {
-            let mut daily_volumes = Vec::new();
-            for _ in 0..7 {
-                daily_volumes.push(rng.gen_range(100..1000));
+        
+        for w in 0..4 {
+            let week_start = start_time + (w * 604800);
+            let week_end = week_start + 604800;
+            let mut daily_volumes = vec![0; 7]; // Mon-Sun
+
+            // Filter data for this facility and this week
+            // In a real DB this would be a SQL query: SELECT count(*) ... GROUP BY date
+            for row in &self.db_data {
+                if row.facility_id == facility_id && row.arrival_timestamp >= week_start && row.arrival_timestamp < week_end {
+                     // Determine day of week (0-6). 
+                     // 1708000000 (Thu, Feb 15 2024). 
+                     // Let's just simple modulo for this mock to map to 0-6 index
+                     let day_index = ((row.arrival_timestamp - week_start) / 86400) as usize;
+                     if day_index < 7 {
+                        daily_volumes[day_index] += 1;
+                     }
+                }
             }
-            weeks.push(WeeklyVolume { week_number: w, daily_volumes });
+
+            weeks.push(WeeklyVolume { week_number: (w + 1) as i32, daily_volumes });
         }
 
         Ok(Response::new(FacilityStats {

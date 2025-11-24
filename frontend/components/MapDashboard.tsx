@@ -32,6 +32,7 @@ export default function MapDashboard() {
     async function loadStats() {
       setLoadingStats(true);
       try {
+        console.log(`Fetching stats for facility: ${selectedId} from server...`);
         // Pattern B: Triggers server-side request
         const res = await analyticsClient.getFacilityStats({ facilityId: selectedId ?? "" });
         setStats(res);

@@ -3,7 +3,7 @@
 /* eslint-disable */
 // @ts-nocheck
 
-import { Empty, RegionList, ViewRequest, ViewResponse } from "./dashboard_pb.ts";
+import { Empty, FacilityRequest, FacilityStats, LocationList, RegionList, ViewRequest, ViewResponse } from "./dashboard_pb.ts";
 import { MethodKind } from "@bufbuild/protobuf";
 
 /**
@@ -36,6 +36,28 @@ export const AnalyticsService = {
       name: "GetRegionStats",
       I: Empty,
       O: RegionList,
+      kind: MethodKind.Unary,
+    },
+    /**
+     * New: Fetch available facility locations
+     *
+     * @generated from rpc dashboard.AnalyticsService.GetLocations
+     */
+    getLocations: {
+      name: "GetLocations",
+      I: Empty,
+      O: LocationList,
+      kind: MethodKind.Unary,
+    },
+    /**
+     * New: Fetch volume stats for a specific facility
+     *
+     * @generated from rpc dashboard.AnalyticsService.GetFacilityStats
+     */
+    getFacilityStats: {
+      name: "GetFacilityStats",
+      I: FacilityRequest,
+      O: FacilityStats,
       kind: MethodKind.Unary,
     },
   }

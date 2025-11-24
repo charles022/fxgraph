@@ -398,3 +398,220 @@ export class RegionStat extends Message<RegionStat> {
   }
 }
 
+/**
+ * @generated from message dashboard.LocationList
+ */
+export class LocationList extends Message<LocationList> {
+  /**
+   * @generated from field: repeated dashboard.Location locations = 1;
+   */
+  locations: Location[] = [];
+
+  constructor(data?: PartialMessage<LocationList>) {
+    super();
+    proto3.util.initPartial(data, this);
+  }
+
+  static readonly runtime: typeof proto3 = proto3;
+  static readonly typeName = "dashboard.LocationList";
+  static readonly fields: FieldList = proto3.util.newFieldList(() => [
+    { no: 1, name: "locations", kind: "message", T: Location, repeated: true },
+  ]);
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): LocationList {
+    return new LocationList().fromBinary(bytes, options);
+  }
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): LocationList {
+    return new LocationList().fromJson(jsonValue, options);
+  }
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): LocationList {
+    return new LocationList().fromJsonString(jsonString, options);
+  }
+
+  static equals(a: LocationList | PlainMessage<LocationList> | undefined, b: LocationList | PlainMessage<LocationList> | undefined): boolean {
+    return proto3.util.equals(LocationList, a, b);
+  }
+}
+
+/**
+ * @generated from message dashboard.Location
+ */
+export class Location extends Message<Location> {
+  /**
+   * @generated from field: string id = 1;
+   */
+  id = "";
+
+  /**
+   * @generated from field: string name = 2;
+   */
+  name = "";
+
+  /**
+   * @generated from field: double latitude = 3;
+   */
+  latitude = 0;
+
+  /**
+   * @generated from field: double longitude = 4;
+   */
+  longitude = 0;
+
+  constructor(data?: PartialMessage<Location>) {
+    super();
+    proto3.util.initPartial(data, this);
+  }
+
+  static readonly runtime: typeof proto3 = proto3;
+  static readonly typeName = "dashboard.Location";
+  static readonly fields: FieldList = proto3.util.newFieldList(() => [
+    { no: 1, name: "id", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "latitude", kind: "scalar", T: 1 /* ScalarType.DOUBLE */ },
+    { no: 4, name: "longitude", kind: "scalar", T: 1 /* ScalarType.DOUBLE */ },
+  ]);
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): Location {
+    return new Location().fromBinary(bytes, options);
+  }
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): Location {
+    return new Location().fromJson(jsonValue, options);
+  }
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): Location {
+    return new Location().fromJsonString(jsonString, options);
+  }
+
+  static equals(a: Location | PlainMessage<Location> | undefined, b: Location | PlainMessage<Location> | undefined): boolean {
+    return proto3.util.equals(Location, a, b);
+  }
+}
+
+/**
+ * @generated from message dashboard.FacilityRequest
+ */
+export class FacilityRequest extends Message<FacilityRequest> {
+  /**
+   * @generated from field: string facility_id = 1;
+   */
+  facilityId = "";
+
+  constructor(data?: PartialMessage<FacilityRequest>) {
+    super();
+    proto3.util.initPartial(data, this);
+  }
+
+  static readonly runtime: typeof proto3 = proto3;
+  static readonly typeName = "dashboard.FacilityRequest";
+  static readonly fields: FieldList = proto3.util.newFieldList(() => [
+    { no: 1, name: "facility_id", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ]);
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): FacilityRequest {
+    return new FacilityRequest().fromBinary(bytes, options);
+  }
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): FacilityRequest {
+    return new FacilityRequest().fromJson(jsonValue, options);
+  }
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): FacilityRequest {
+    return new FacilityRequest().fromJsonString(jsonString, options);
+  }
+
+  static equals(a: FacilityRequest | PlainMessage<FacilityRequest> | undefined, b: FacilityRequest | PlainMessage<FacilityRequest> | undefined): boolean {
+    return proto3.util.equals(FacilityRequest, a, b);
+  }
+}
+
+/**
+ * @generated from message dashboard.FacilityStats
+ */
+export class FacilityStats extends Message<FacilityStats> {
+  /**
+   * @generated from field: string facility_id = 1;
+   */
+  facilityId = "";
+
+  /**
+   * @generated from field: repeated dashboard.WeeklyVolume weeks = 2;
+   */
+  weeks: WeeklyVolume[] = [];
+
+  constructor(data?: PartialMessage<FacilityStats>) {
+    super();
+    proto3.util.initPartial(data, this);
+  }
+
+  static readonly runtime: typeof proto3 = proto3;
+  static readonly typeName = "dashboard.FacilityStats";
+  static readonly fields: FieldList = proto3.util.newFieldList(() => [
+    { no: 1, name: "facility_id", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "weeks", kind: "message", T: WeeklyVolume, repeated: true },
+  ]);
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): FacilityStats {
+    return new FacilityStats().fromBinary(bytes, options);
+  }
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): FacilityStats {
+    return new FacilityStats().fromJson(jsonValue, options);
+  }
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): FacilityStats {
+    return new FacilityStats().fromJsonString(jsonString, options);
+  }
+
+  static equals(a: FacilityStats | PlainMessage<FacilityStats> | undefined, b: FacilityStats | PlainMessage<FacilityStats> | undefined): boolean {
+    return proto3.util.equals(FacilityStats, a, b);
+  }
+}
+
+/**
+ * @generated from message dashboard.WeeklyVolume
+ */
+export class WeeklyVolume extends Message<WeeklyVolume> {
+  /**
+   * @generated from field: int32 week_number = 1;
+   */
+  weekNumber = 0;
+
+  /**
+   * 7 days (Mon-Sun)
+   *
+   * @generated from field: repeated int32 daily_volumes = 2;
+   */
+  dailyVolumes: number[] = [];
+
+  constructor(data?: PartialMessage<WeeklyVolume>) {
+    super();
+    proto3.util.initPartial(data, this);
+  }
+
+  static readonly runtime: typeof proto3 = proto3;
+  static readonly typeName = "dashboard.WeeklyVolume";
+  static readonly fields: FieldList = proto3.util.newFieldList(() => [
+    { no: 1, name: "week_number", kind: "scalar", T: 5 /* ScalarType.INT32 */ },
+    { no: 2, name: "daily_volumes", kind: "scalar", T: 5 /* ScalarType.INT32 */, repeated: true },
+  ]);
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): WeeklyVolume {
+    return new WeeklyVolume().fromBinary(bytes, options);
+  }
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): WeeklyVolume {
+    return new WeeklyVolume().fromJson(jsonValue, options);
+  }
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): WeeklyVolume {
+    return new WeeklyVolume().fromJsonString(jsonString, options);
+  }
+
+  static equals(a: WeeklyVolume | PlainMessage<WeeklyVolume> | undefined, b: WeeklyVolume | PlainMessage<WeeklyVolume> | undefined): boolean {
+    return proto3.util.equals(WeeklyVolume, a, b);
+  }
+}
+

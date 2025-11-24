@@ -10,6 +10,7 @@ pub mod dashboard {
 }
 use dashboard::analytics_service_server::{AnalyticsService, AnalyticsServiceServer};
 use dashboard::{ViewRequest, ViewResponse, RegionList, RegionStat, ShipmentRow, Empty};
+use dashboard::{Location, LocationList, FacilityRequest, FacilityStats, WeeklyVolume};
 
 #[derive(Debug, Clone)]
 struct MockShipment {
@@ -60,6 +61,37 @@ impl AnalyticsService for MyAnalytics {
         ];
 
         Ok(Response::new(RegionList { regions }))
+    }
+
+    async fn get_locations(&self, _req: Request<Empty>) -> Result<Response<LocationList>, Status> {
+        let locations = vec![
+            Location { id: "loc-1".into(), name: "New York".into(), latitude: 40.7128, longitude: -74.0060 },
+            Location { id: "loc-2".into(), name: "Los Angeles".into(), latitude: 34.0522, longitude: -118.2437 },
+            Location { id: "loc-3".into(), name: "Chicago".into(), latitude: 41.8781, longitude: -87.6298 },
+            Location { id: "loc-4".into(), name: "Houston".into(), latitude: 29.7604, longitude: -95.3698 },
+            Location { id: "loc-5".into(), name: "Denver".into(), latitude: 39.7392, longitude: -104.9903 },
+        ];
+        Ok(Response::new(LocationList { locations }))
+    }
+
+    async fn get_facility_stats(&self, request: Request<FacilityRequest>) -> Result<Response<FacilityStats>, Status> {
+        let req = request.into_inner();
+        let facility_id = req.facility_id;
+        let mut rng = rand::thread_rng();
+        
+        let mut weeks = Vec::new();
+        for w in 1..=4 {
+            let mut daily_volumes = Vec::new();
+            for _ in 0..7 {
+                daily_volumes.push(rng.gen_range(100..1000));
+            }
+            weeks.push(WeeklyVolume { week_number: w, daily_volumes });
+        }
+
+        Ok(Response::new(FacilityStats {
+            facility_id,
+            weeks,
+        }))
     }
 
     // --- PATTERN A: Server-Side Processing ---

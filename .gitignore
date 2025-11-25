@@ -12,3 +12,5 @@
 
 # TypeScript build info
 *.tsbuildinfo
+
+*.swp

@@ -127,6 +127,183 @@ Summary/notes:
 
 
 
+Apache Flight
+-
+    - may be overkill and actually slower
+    - additional  archiectural complexity in the browser
+    - significant hurdles when running inside a web
+      browser
+    - built on gRPC/HTTP2 - browsers can not make
+      direct gPRC calls
+    - server must first translate gPRC -> gPRC-Web
+      (usually w/ proxy)
+    - serialization translation, network hop,
+      infrastructure complexity
+vs Custom Rust Binary:
+-
+    - over standard **WebSockets**
+    - direct TCP-like connection
+    - send raw binary bytes from server
+    - browser receives raw binary bytes
+      **(ArrayBuffer)**
+    - no proxies, headers, translation
+
+!! important trap !!
+-
+    - official Rust 'arrow-flight' crate relies on
+      'tonic' (a gRPC library) and tokio, which
+      generatlly **do not compile to
+      'wasm32-unknown-unknown** because they expect
+      system TCP sockes, which the browser sandbox
+      forbids
+    - workaround:
+    - ... to use Flight in WASM, often have to use
+      JavaScript Filght client and "bind" it to the
+      Rus code, **which defeats the purpose of
+      writing our logic in Rust**
+    - why our solution works better:
+    - ... rkyv and bincode are no_std compatible and
+      work flawlessly in WASM out of the box
+
+(sweet spot) Arrow ICP over WebSockets
+-
+    - if using Polars, use the Arrow memory format,
+      but avoid the "Flight" protocol wrapper
+
+Best Hybrid Approach: Polars + Arrow IPC:
+-
+    - for straming raw bytes
+    - Zero-Copy benefits of Arrow...
+      ... w/o weight of gRPC/Fight
+    - Server: Use Polars/Arrow to create a DataFrame
+    - Serialize: Dump the dataframe to Arrow IPC
+      Streaming Format (raw bytes).
+    - Transport: Send those bytes over a WebSocket.
+    - Client (WASM): Read the bytes directly into a
+      Polars DataFrame (using polars_core or
+      arrow-wasm).
+
+
+Feature Comparison: Flight vs Arrow IPC vs Custom Binary:
+-
+    - Transport:
+        - Apache Flight: gRPC-Web (requires proxy)
+        - Arrow IPC over WebSocket: WebSocket (direct)
+        - Custom Binary (rkyv): WebSocket (direct)
+
+    - Data Format:
+        - Apache Flight: Arrow (columnar)
+        - Arrow IPC over WebSocket: Arrow (columnar)
+        - Custom Binary (rkyv): Rust struct (row-based)
+
+    - Deserialization:
+        - Apache Flight: Zero-copy (mostly)
+        - Arrow IPC over WebSocket: Zero-copy
+        - Custom Binary (rkyv): Zero-copy (instant)
+
+    - Browser Support:
+        - Apache Flight: Poor (requires JS wrappers)
+        - Arrow IPC over WebSocket: Excellent
+        - Custom Binary (rkyv): Excellent
+
+    - Best For...:
+        - Apache Flight: Inter-service (Backend-to-Backend)
+        - Arrow IPC over WebSocket: Polars/DataFrames in Browser
+        - Custom Binary (rkyv): Game state / Simple structs
+
+
+When sending tabular data (Polars DataFrames), do
+not use Flight. Instead, stream Arrow IPC bytes over
+a WebSocket. This preserves the efficient columnar
+layout (which Polars needs) but avoids the
+gRPC/Envoy complexity that Flight requires in the
+browser.
+
+Verdict: Polars v Arrow in browser:
+-
+    - use Polars in browser
+    - in addition...
+    - can use arrow-rs kernels for small light actions
+    - sort/filter are not too bad w/ arrow kernels
+    - groupby is untennable w/ arrow kernels
+
+Arrow v Polars:
+-
+    - TL;DR...
+    - Use Arrow when...
+        - sort/filter is the extent
+        - goal is just Data Access
+        - ie getting data from server to screen
+        - sort, filter, etc arrow kernels are not
+          bad but still must be paired with
+          additional code logic
+    - Use Polars when...
+        - doing more serious data access/manipulation on browser
+        - group by is untenable in Arrow
+    - Arrow is significantly lighter than Polars
+    - Arrow is not as capable in terms of high-level features
+    - Arrow can build/do anything, but must assemble
+      every piece yourself
+        - likely leads to...
+        - micro optimizations in rare cases
+        - more bugs and code to do the same things
+        - irrelevant amount of "weight" saved over Polars
+    - arrow-rs is modular, can compile only the
+      specific features needed
+    - Arrow likely <1MB compressed
+    - Polars likely 3-5MB compressed (heavy for a
+      web browser )
+    - "Raw Arrow" is a low-level memory format, not
+      a data analysis library.
+
+arrow-rs v Polars: code comparison:
+-
+    Filter:
+    (Polars)
+    - df.filter(col("age").gt(30))
+    (arrow)
+    - arrow::compute::filter kernel
+    - compute a boolean mask array [true, false,
+    ...], then use the filter kernel to create a new
+    array using that mask
+    - ...
+    - ...
+    Sort:
+    (Polars)
+    - df.sort("name")
+    (arrow)
+    - arrow::compute::sort/sort_to_indices kernel
+    - use the 'sort_to_indices' kernel to get a list
+      of index positions, then use the 'take' kernel
+      to reorder every column manually based on
+      those indices.
+    - ...
+    - ...
+    Group by
+    (Polars)
+    - df.group_by("city").agg(sum("salary"))
+    (Arrow)
+    - **Extremely difficult**
+    - manually hash the "city" column, map indices
+      to buckets, and iterate through the "salary"
+      column to sum values into those buckets
+
+
+Apache DataFusion (avoid)
+-
+    - SQL engine built on Arrow
+    - similar to Polars
+    - much heavier, not optimized for browser like
+      Polars is
+
+
+
+
+
+
+
+
+
 
 
     - handle massive datasets without overwhelming the browser

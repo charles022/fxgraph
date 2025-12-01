@@ -353,9 +353,130 @@ Arrow Purist: render to UI
         - JS reads the data without Rust doing any work
 
 
+Arrow Purist: manual_arrowrs_examples.rs
+-
+    - Why this demonstrates the "Lightweight" Advantage
+    - Dependencies: This script only requires arrow. It does not require
+      polars, polars-core, polars-lazy, sqlparser, or serde. The resulting WASM
+      binary will be significantly smaller.
+    - 
+    - No "Black Box":
+    - In the group_by_example, you chose to use a HashMap. You could have
+      chosen to sort and slice if memory was tight. In Polars, the engine
+      chooses for you.
+    - In unique_operations_example, you can see how we built a HashMap<&str,
+      Vec<usize>>. This &str references the actual bytes inside the Arrow
+      array. We didn't allocate new strings for the keys. This level of memory
+      control is difficult in high-level DataFrame libraries.
+    - 
+    - Direct Access:
+    - The loop for i in 0..batch.num_rows() with sales.value(i) compiles down
+      to a very tight CPU loop, similar to C++. There is no "Expression
+      Evaluation" overhead checking data types at runtime for every row.
+
+
+Arrow Purist: sending large compressed v small pieces over network
+-
+    - both capabilities built directly into the IPC
+    - all in the 'IpcWriteOptions' library
+
+Arrow Purist: compressed data transfers
+-
+    - Format:
+        'Arrow IPC File Format'
+        or
+        'Stream Format' with ZSTD
+    - use ZSTD, natively supported by Arrow, high compression ratio
+
+Arrow Purist: server side - compressed data transfer - Rust code
+-
+    use arrow::ipc::writer::{FileWriter, IpcWriteOptions};
+    use arrow::ipc::compression::CompressionType;
+    
+    fn send_large_compressed_data(batch: &RecordBatch) -> Vec<u8> {
+        let mut buffer = Vec::new();
+    
+        // 1. Configure Compression (ZSTD is usually best for size)
+        let options = IpcWriteOptions::try_new()
+            .with_compression(Some(CompressionType::ZSTD))
+            .unwrap();
+    
+        // 2. Create the Writer with these options
+        let mut writer = FileWriter::try_new_with_options(
+            &mut buffer,
+            batch.schema(),
+            options
+        ).unwrap();
+    
+        // 3. Write and Finish
+        writer.write(batch).unwrap();
+        writer.finish().unwrap();
+    
+        buffer // This Vec<u8> is now highly compressed}
+
+
+Arrow Purist: client side - compressed data transfer - Rust code
+-
+    - reader auto-detects compression as long as the feature is enabled in
+      Cargo.toml, dont need to change reading logic
+    // client Cargo.toml
+    [dependencies]
+    arrow = { version = "53.0", features = ["ipc_compression"] }
 
 
 
+
+Arrow Purist: uncompressed real-time streaming
+-
+    format: 'Arrow IPC Streaming Format'
+
+
+Arrow Purist: server side - compressed data transfer - Rust code
+-
+    - keep the writer open and 'flush' immediately after every write
+    use arrow::ipc::writer::{StreamWriter, IpcWriteOptions};
+    
+    // Imagine this function runs inside a WebSocket loop
+    fn stream_realtime_update(batch: &RecordBatch) -> Vec<u8> {
+        let mut buffer = Vec::new();
+    
+        // 1. No Compression Options (Default is None)
+        let options = IpcWriteOptions::default();
+    
+        // 2. Create Stream Writer
+        // Note: We use StreamWriter, not FileWriter. 
+        // StreamWriter is optimized for sequential processing.
+        let mut writer = StreamWriter::try_new_with_options(
+            &mut buffer, 
+            batch.schema(), 
+            options
+        ).unwrap();
+    
+        // 3. Write the batch
+        writer.write(batch).unwrap();
+        
+        // 4. IMPORTANT: Finish/Flush explicitly if sending discrete messages
+        writer.finish().unwrap(); 
+    
+        buffer{ // This is raw, uncompressed Arrow bytes ready for the wire
+
+Arrow Purist: Note on Web Socket Streaming Architecture
+-
+    - 2 choices...
+    - Discrete Messages: You create a new StreamWriter for every WebSocket
+      message. Each message contains the Schema + 1 RecordBatch. This is
+      easiest to implement but adds a tiny overhead (sending the schema every
+      time).
+    - 
+    - Continuous Stream: You send the Schema once when the WebSocket connects.
+      Then, for every update, you only send the bytes for the RecordBatch. On
+      the client, you feed these chunks into a continuous StreamDecoder.
+
+
+Arrow Purist: Stream v Compression: when to use:
+-
+    - use compressed data transfer approach for initial login etc
+    - use streaming for real-time updates
 
 
 

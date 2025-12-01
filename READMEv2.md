@@ -299,6 +299,61 @@ Apache DataFusion (avoid)
 
 
 
+Arrow Purist: Streaming Raw Arrow / Arrow IPC Ingestion:
+-
+    - open a WebSocket and stream raw bytes
+    - do not need 100% of data to arrive before we can access it
+    - 1) Arrow Schema arrives (the first 1KB)
+    -    Polars (which uses Arrow under the hood) knows the column names
+    - 2) First N rows arrive (the next nKb)
+    -    Polars can render these rows on the screen
+    - ...
+    - (server): serializes a RecordBatch into Arrow IPC Streaming format
+        basically a raw memory dump
+    - (network): sends bytes
+    - (client): receives the Uint8Array. Pass this array into
+        arrow::ipc::reader::StreamReader.
+
+Arrow Purist: Storage
+-
+    - In Rust, our table would look like this...
+    struct UserTable {
+        ids: Int32Array,      // [1, 2, 3, ...]
+        names: StringArray,   // ["Alice", "Bob", "Charlie", ...]
+        scores: Float32Array, // [95.5, 88.0, 42.0, ...]}
+
+
+Arrow Purist: code for manual manipulation
+-
+    - build exactly the features we need using the low level
+      kernels: 'filter', 'take', 'sort_to_indices'
+    - 'arrow::compute' module as the toolkit for SQL-esk actions
+    - SQL: SELECT * WHERE scores > 90
+    - arrow-rs: 
+        - use 'gt_scalar' kernel on 'scores' array to return a
+          bool bitmask [False, False, True, ...]
+        - use 'filter' kernel on **every column** w/ bitmask
+          filter(ids, mask) -> [1]
+          filter(names, mask) -> ["Alice"]
+          filter(scores, mask) -> [95.5]
+
+Arrow Purist: render to UI
+-
+    - Strategy A: (preferred) only send the rows currently visible on the
+      screen to JS (negligible cost)
+        - user scrolls to rows 100-120
+        - rust slices the arrays at 100-120
+        - Rust converts just those rows to a JS Array/Object
+        - JS renders 20 'div's
+        - negligible cost
+    - Strategy B: (advanced) shared buffer, pass a pointer to the
+      Arrow memory directly to JS
+        - JS uses the apache-arrow library to wrap a view arount
+          the WASM memory
+        - JS reads the data without Rust doing any work
+
+
+
 
 
 

@@ -716,20 +716,198 @@ Server API Endpoint: how to receive and use requests from the client
 
 Pure Rust -> UI: egpu
 -
-    The "Canvas" Approach (egui)
-Best for: High-performance dashboards, trading terminals, or if you want it to look like a desktop app.
+    Pros:
+    - high performance dashboards, trading terminals
+    - can display intense ammounts of data cleanly
+        ie https://www.egui.rs/#clock
+    - draws everything (text, borders, buttons) onto a WebGL Canvas using GPU
+      acceleration, bypasses the browser DOM entirely.
+    - does not use HTML <table> or <div>
+    - insanely fast, can THEORETICALLY render 10,000 rows at 60FPS because it
+      is just pixels
+      on a GPU texture
+    - no "Javascript/DOM" overhead.
 
-egui does not use HTML <table> or <div> tags. It draws everything (text, borders, buttons) onto a WebGL Canvas using GPU acceleration. It bypasses the browser DOM entirely.
+    Cons:
+    - rigid
+    - abilities would be lost on a table because creating 50,000 HTML <tr>
+      elements will freeze the browser (because the browser's rendering engine
+      is the bottleneck, not Rust). If your table is larger than ~500 rows, you
+      must implement Virtualization (or "Windowing") in Rust
 
-Pros: Insanely fast. You can render 10,000 rows at 60FPS because it's just pixels on a GPU texture. No "Javascript/DOM" overhead.
 
-Cons: It doesn't look like a native website. Text selection and accessibility (screen readers) are often limited.
+    Examples:
     - https://www.egui.rs/#clock
     - https://emilk.github.io/egui_plot/
     - https://github.com/emilk/egui_plot
     - https://github.com/rerun-io/rerun
 
+Pure Rust -> UI: leptos (+polars)
+-
+    Pros: looks like a normal web app
+    Cons: not quite as high performance as egpu
+    Action: treat the Polars DataFrame as a Signal that triggers a Rust fxn
+    that reruns the Polars query then updates the HTML
 
+Pure Rust -> UI: virtualization
+-
+    - Calculate scroll position.
+    - Use Polars df.slice(offset, 20) to get only the 20 visible rows.
+    - Render only those 20 rows to HTML.
+
+
+Island Architecture / Micro-Frontend
+-
+    - integrate rust-native UI elements alongside traditional JS
+      elements
+    - rust/WASM ui compenents are embeded inside a specific <div>
+
+// Island Architecture / Micro-Frontend example:
+
+
+
+-------------------------
+Island Architecture / Micro Front-end example
+-------------------------
+
+-------------------------
+Island Architecture: HTML
+-------------------------
+
+
+<body>
+  <!-- Your existing JavaScript Navbar -->
+  <nav id="js-navbar">...</nav>
+
+  <!-- Your existing JS Content -->
+  <div class="sidebar">...</div>
+
+  <!-- THE RUST ISLAND -->
+  <!-- The Rust WASM will hunt for this ID and take it over -->
+  <div id="rust-table-root" style="height: 500px; width: 100%;"></div>
+
+  <!-- Your existing JS Footer -->
+  <footer>...</footer>
+
+  <!-- Load the WASM glue code -->
+  <script type="module">
+      import init, { mount_table } from './pkg/my_rust_app.js';
+      
+      async function run() {
+          await init(); // Initialize WASM memory
+          mount_table("rust-table-root"); // Tell Rust where to live
+      }
+      run();
+  </script>
+</body>
+
+
+
+-------------------------
+Island Architecture: Rust
+-------------------------
+// mount to the specific element id from the HTML setup
+
+use leptos::*;
+use wasm_bindgen::prelude::*;
+
+#[component]
+fn DataViewer() -> impl IntoView {
+    view! {
+        <table class="my-cool-rust-table">
+            // Polars rendering logic here...
+        </table>
+    }
+}
+
+// This function is exported to JavaScript
+#[wasm_bindgen]
+pub fn mount_table(element_id: &str) {
+    // Leptos helper to mount to a specific Div ID
+    mount_to(
+        document().get_element_by_id(element_id).unwrap(),
+        || view! { <DataViewer /> }
+    )
+}
+
+
+
+-------------------------
+Island Architecture: JS/Rust
+-------------------------
+// You likely want the JS side to control the Rust side ((e.g., a JS
+dropdown filters the Rust table) or vice versa
+// expose public functions in Rust that manipulate a global or static signal
+
+-------------------------
+Island Architecture: JS/Rust (Rust portion)
+-------------------------
+// Create a global signal for the filter
+static FILTER_SIGNAL: RwLock<Option<String>> = RwLock::new(None);
+
+#[wasm_bindgen]
+pub fn apply_js_filter(region_name: String) {
+    // When JS calls this, update the signal
+    // The Leptos UI will automatically re-render the table
+    let mut write = FILTER_SIGNAL.write().unwrap();
+    *write = Some(region_name);
+}
+
+
+-------------------------
+Island Architecture: JS/Rust (JS portion)
+-------------------------
+
+import { apply_js_filter } from './pkg/my_rust_app.js';
+
+// Your existing JS button
+document.getElementById("filter-btn").onclick = () => {
+    apply_js_filter("US-East"); // Instantly updates the Rust UI
+};
+
+
+
+-------------------------
+Island Architecture: Rust -> JS Output
+-------------------------
+// If a user clicks a row in the Rust table, you might want your
+React/JS app to show a modal. Rust can dispatch standard browser
+events that JS listens for.
+// Rust
+
+-------------------------
+Island Architecture: Rust -> JS Output (rust portion)
+-------------------------
+
+let on_row_click = move |row_id| {
+    // Create a native browser CustomEvent
+    let event = web_sys::CustomEvent::new("rust-row-selected").unwrap();
+    // Attach data
+    // Dispatch to the window
+    window().dispatch_event(&event).unwrap();
+};
+
+
+-------------------------
+Island Architecture: Rust -> JS Output (js portion)
+-------------------------
+
+window.addEventListener("rust-row-selected", (e) => {
+    console.log("Rust told me the user clicked a row!");
+    myReactApp.openModal();
+});
+};
+
+
+Summary
+- 
+    - React/Vue sees: A black box <div>. It doesn't care what's
+      inside.
+    - The Browser sees: Just another part of the DOM tree. The HTML
+      generated by Rust is indistinguishable from HTML generated by
+      React.
+    - The User sees: A single cohesive page, where one specific table
+      happens to sort 100x faster than the rest of the site.
 
 
 

@@ -9,25 +9,30 @@
 
 Main proposal:
 -
-    (Rust server) - gRPC - JS
-    with
-    Rust server - rkyv - Rust/WASM
+    (Rust server) - gRPC - JS with Rust server - rkyv -
+    Rust/WASM
 
 
 Proposed Rust + WASM approach:
-    - Rust Server: Dumps memory directly to a binary stream (Serialization)
+    - Rust Server: Dumps memory directly to a binary stream
+      (Serialization)
     - Network: Transmits raw bytes.
-    - WASM Client: Loads bytes directly back into Rust Structs (Deserialization).
+    - WASM Client: Loads bytes directly back into Rust Structs
+      (Deserialization).
         - no deserialization if using rkyv, zero-copy
 
-(( alternate to the current... ))
-((  - Rust Server: Converts Rust Struct -> Protobuf Binary. ))
-((  - Network: Transmits Protobuf (often wrapped in gRPC-Web text/base64 framing). ))
-((  - JS Client: Parses Protobuf $\rightarrow$ JavaScript Objects. ))
+(( alternate to the current... )) ((  - Rust Server: Converts
+Rust Struct -> Protobuf Binary.)) ((  - Network: Transmits
+Protobuf (often wrapped in gRPC-Web text/base64 framing). ))
+((
+- JS Client: Parses Protobuf $\rightarrow$ JavaScript Objects.
+  ))
 
 - use/control both ends with the same language (Rust)...
-- share the exact struct definitions via a common library (crate)...
-- allows us to use **serialization** formats that are strictly coupled to code
+- share the exact struct definitions via a common library
+  (crate)...
+- allows us to use **serialization** formats that are strictly
+  coupled to code
     - (extremely fast, faster than gRPC)
 
 
@@ -35,23 +40,29 @@ Proposed Rust + WASM approach:
 Why is this faser han gRPC?
 -
     - gRPC (Protobuf) is designed to be language agnostic
-    - handles fields that are option, out of order, or versioned
-    - whereas, rust-native formats dont always need those checks
+    - handles fields that are option, out of order, or
+      versioned
+    - whereas, rust-native formats dont always need those
+      checks
 
 Zero-Copy possible using rkyv (pronounced "archive")
 -
-    - Traditional (Serde/Bincode): The server turns the object into bytes. The client reads
-      bytes and allocates new memory to recreate the object.
-    - Zero-Copy (rkyv): The server aligns the data in memory and sends it. The client
-      receives the buffer and casts a pointer to it.
-    - There is effectively no deserialization step. The client can use the data strictly as
-      it arrived over the network without the CPU doing any work to "parse" it.
+    - Traditional (Serde/Bincode): The server turns the object
+      into bytes. The client reads bytes and allocates new
+      memory to recreate the object.
+    - Zero-Copy (rkyv): The server aligns the data in memory
+      and sends it. The client receives the buffer and casts a
+      pointer to it.
+    - There is effectively no deserialization step. The client
+      can use the data strictly as it arrived over the network
+      without the CPU doing any work to "parse" it.
 
 
 Current Architecture (gRPC + JS):
 -
     - Protocol - gRPC-Web
-    - Serialization - Protocol Buffers - compact but requires parsing
+    - Serialization - Protocol Buffers - compact but requires
+      parsing
     - Client - JS / TypeScript
     - Type Safety - enforced via .proto files generation
     - Bottleneck - JS parsing overhead & garbach collection
@@ -61,38 +72,41 @@ Proposed Architecture (Rust/WASM):
     - Protocol - WebSocket or HTTP/2 Binary Strams
     - Serialization - Bincode (small, fast) or rkyv (instant)
     - Client - Rust compiled to .wasm
-    - Type Safety - enforced by Rust compiler (shared crates [/struct/module?]
+    - Type Safety - enforced by Rust compiler (shared crates
+      [/struct/module?]
     - Bottleneck - WASM/JS "bridge" overhead
 
 
 Proposed project workspace structure:
 -
-// ./shared/src/lib.rs ... lib crate
-    #[derive(Serialize, Deserialize)] // or #[derive(Archive)] for rkyv
-    pub struct GameState {
-        pub score: u64,
-        pub positions: Vec<(f32, f32)>,}
+// ./shared/src/lib.rs ... lib crate #[derive(Serialize,
+Deserialize)] // or #[derive(Archive)] for rkyv pub struct
+GameState { pub score: u64, pub positions: Vec<(f32, f32)>,}
 
 // ./server/ ... bin crate
     - imports 'shared' (ie ./shared/src/lib.rs?)
-    - uses 'bincode::serialize' to send data over a WebSocket or HTTP response
-// ./client/ ... WASM crate
+    - uses 'bincode::serialize' to send data over a WebSocket
+      or HTTP response // ./client/ ... WASM crate
     - imports 'shared'
     - uses 'fetch' or 'ws' to get the bytes, then
     - 'bincode::deserialize'
 
-Solutions to the "bridge" tax of moving data from Rust/WASM to JS
+Solutions to the "bridge" tax of moving data from Rust/WASM to
+JS
 -
     - Canvas/WebGL ('wgpu' or 'web-sys')
         - preferred method where possible
-        - draw he data to a <canvas> so WASM never needs to talk to JS
+        - draw he data to a <canvas> so WASM never needs to
+          talk to JS
     - Signals
-        - only pass specific strungs/numbers needed for the UI to JS, rather
-          than the entire object
+        - only pass specific strungs/numbers needed for the UI
+          to JS, rather than the entire object
     - Frameworks (Leptos, Dioxus, Yew)
-        - rust frameworks that handle the WASM/DOM interaction efficiently
-        - may try these down the road, but for now do not use, as we are
-          trying to keep this build minimal and avoid additional frameworks
+        - rust frameworks that handle the WASM/DOM interaction
+          efficiently
+        - may try these down the road, but for now do not use,
+          as we are trying to keep this build minimal and
+          avoid additional frameworks
 
 
 Summary/notes:
@@ -102,26 +116,19 @@ Summary/notes:
         - zero-copy
             - rkyv
             - #[derive(Archive)]
-        - serializeserialize/deserialize w/ share structs otherwise
+        - serializeserialize/deserialize w/ share structs
+          otherwise
             - bincode::deserialize
             - #[derive(Serialize, Deserialize)]
     - render WASM w/
-        - Canvas/WebGL, wgpu or web-sys, draw data to a <canvas>
-        - DO NOT USE: possible future frameworks: Leptos, Dioxus, Yew
-./
-├── shared
-│   ├── Cargo.toml
-│   └── src
-│       └── lib.rs // shared structures
-├── server
-│   ├── Cargo.toml
-│   └── src
-│       └── ___.rs
-├── client
-│   ├── Cargo.toml
-│   └── src
-│       └── ___.rs
-└── ...
+        - Canvas/WebGL, wgpu or web-sys, draw data to a
+          <canvas>
+        - DO NOT USE: possible future frameworks: Leptos,
+          Dioxus, Yew ./ ├── shared │   ├── Cargo.toml │   └──
+          src │       └── lib.rs // shared structures ├──
+          server │   ├── Cargo.toml │   └── src │   └── ___.rs
+          ├── client │   ├── Cargo.toml │   └── src │  
+          └── ___.rs └── ...
 
 
 
@@ -131,57 +138,50 @@ Apache Flight
 -
     - may be overkill and actually slower
     - additional  archiectural complexity in the browser
-    - significant hurdles when running inside a web
-      browser
-    - built on gRPC/HTTP2 - browsers can not make
-      direct gPRC calls
-    - server must first translate gPRC -> gPRC-Web
-      (usually w/ proxy)
-    - serialization translation, network hop,
-      infrastructure complexity
-vs Custom Rust Binary:
+    - significant hurdles when running inside a web browser
+    - built on gRPC/HTTP2 - browsers can not make direct gPRC
+      calls
+    - server must first translate gPRC -> gPRC-Web (usually w/
+      proxy)
+    - serialization translation, network hop, infrastructure
+      complexity vs Custom Rust Binary:
 -
     - over standard **WebSockets**
     - direct TCP-like connection
     - send raw binary bytes from server
-    - browser receives raw binary bytes
-      **(ArrayBuffer)**
+    - browser receives raw binary bytes **(ArrayBuffer)**
     - no proxies, headers, translation
 
 !! important trap !!
 -
-    - official Rust 'arrow-flight' crate relies on
-      'tonic' (a gRPC library) and tokio, which
-      generatlly **do not compile to
-      'wasm32-unknown-unknown** because they expect
-      system TCP sockes, which the browser sandbox
-      forbids
+    - official Rust 'arrow-flight' crate relies on 'tonic' (a
+      gRPC library) and tokio, which generatlly **do not
+      compile to 'wasm32-unknown-unknown** because they expect
+      system TCP sockes, which the browser sandbox forbids
     - workaround:
-    - ... to use Flight in WASM, often have to use
-      JavaScript Filght client and "bind" it to the
-      Rus code, **which defeats the purpose of
-      writing our logic in Rust**
+    - ... to use Flight in WASM, often have to use JavaScript
+      Filght client and "bind" it to the Rus code, **which
+      defeats the purpose of writing our logic in Rust**
     - why our solution works better:
-    - ... rkyv and bincode are no_std compatible and
-      work flawlessly in WASM out of the box
+    - ... rkyv and bincode are no_std compatible and work
+      flawlessly in WASM out of the box
 
 (sweet spot) Arrow ICP over WebSockets
 -
-    - if using Polars, use the Arrow memory format,
-      but avoid the "Flight" protocol wrapper
+    - if using Polars, use the Arrow memory format, but avoid
+      the "Flight" protocol wrapper
 
 Best Hybrid Approach: Polars + Arrow IPC:
 -
     - for straming raw bytes
-    - Zero-Copy benefits of Arrow...
-      ... w/o weight of gRPC/Fight
+    - Zero-Copy benefits of Arrow...  ... w/o weight of
+      gRPC/Fight
     - Server: Use Polars/Arrow to create a DataFrame
-    - Serialize: Dump the dataframe to Arrow IPC
-      Streaming Format (raw bytes).
+    - Serialize: Dump the dataframe to Arrow IPC Streaming
+      Format (raw bytes).
     - Transport: Send those bytes over a WebSocket.
-    - Client (WASM): Read the bytes directly into a
-      Polars DataFrame (using polars_core or
-      arrow-wasm).
+    - Client (WASM): Read the bytes directly into a Polars
+      DataFrame (using polars_core or arrow-wasm).
 
 
 Feature Comparison: Flight vs Arrow IPC vs Custom Binary:
@@ -208,16 +208,16 @@ Feature Comparison: Flight vs Arrow IPC vs Custom Binary:
 
     - Best For...:
         - Apache Flight: Inter-service (Backend-to-Backend)
-        - Arrow IPC over WebSocket: Polars/DataFrames in Browser
+        - Arrow IPC over WebSocket: Polars/DataFrames in
+          Browser
         - Custom Binary (rkyv): Game state / Simple structs
 
 
-When sending tabular data (Polars DataFrames), do
-not use Flight. Instead, stream Arrow IPC bytes over
-a WebSocket. This preserves the efficient columnar
-layout (which Polars needs) but avoids the
-gRPC/Envoy complexity that Flight requires in the
-browser.
+When sending tabular data (Polars DataFrames), do not use
+Flight. Instead, stream Arrow IPC bytes over a WebSocket. This
+preserves the efficient columnar layout (which Polars needs)
+but avoids the gRPC/Envoy complexity that Flight requires in
+the browser.
 
 Verdict: Polars v Arrow in browser:
 -
@@ -234,145 +234,140 @@ Arrow v Polars:
         - sort/filter is the extent
         - goal is just Data Access
         - ie getting data from server to screen
-        - sort, filter, etc arrow kernels are not
-          bad but still must be paired with
-          additional code logic
+        - sort, filter, etc arrow kernels are not bad but
+          still must be paired with additional code logic
     - Use Polars when...
-        - doing more serious data access/manipulation on browser
+        - doing more serious data access/manipulation on
+          browser
         - group by is untenable in Arrow
     - Arrow is significantly lighter than Polars
     - Arrow is not as capable in terms of high-level features
-    - Arrow can build/do anything, but must assemble
-      every piece yourself
+    - Arrow can build/do anything, but must assemble every
+      piece yourself
         - likely leads to...
         - micro optimizations in rare cases
         - more bugs and code to do the same things
         - irrelevant amount of "weight" saved over Polars
-    - arrow-rs is modular, can compile only the
-      specific features needed
+    - arrow-rs is modular, can compile only the specific
+      features needed
     - Arrow likely <1MB compressed
-    - Polars likely 3-5MB compressed (heavy for a
-      web browser )
-    - "Raw Arrow" is a low-level memory format, not
-      a data analysis library.
+    - Polars likely 3-5MB compressed (heavy for a web browser
+      )
+    - "Raw Arrow" is a low-level memory format, not a data
+      analysis library.
 
 arrow-rs v Polars: code comparison:
 -
-    Filter:
-    (Polars)
-    - df.filter(col("age").gt(30))
-    (arrow)
+    Filter: (Polars)
+    - df.filter(col("age").gt(30)) (arrow)
     - arrow::compute::filter kernel
-    - compute a boolean mask array [true, false,
-    ...], then use the filter kernel to create a new
-    array using that mask
+    - compute a boolean mask array [true, false, ...], then
+      use the filter kernel to create a new array using that
+      mask
     - ...
-    - ...
-    Sort:
-    (Polars)
-    - df.sort("name")
-    (arrow)
+    - ...  Sort: (Polars)
+    - df.sort("name") (arrow)
     - arrow::compute::sort/sort_to_indices kernel
-    - use the 'sort_to_indices' kernel to get a list
-      of index positions, then use the 'take' kernel
-      to reorder every column manually based on
-      those indices.
+    - use the 'sort_to_indices' kernel to get a list of index
+      positions, then use the 'take' kernel to reorder every
+      column manually based on those indices.
     - ...
-    - ...
-    Group by
-    (Polars)
-    - df.group_by("city").agg(sum("salary"))
-    (Arrow)
+    - ...  Group by (Polars)
+    - df.group_by("city").agg(sum("salary")) (Arrow)
     - **Extremely difficult**
-    - manually hash the "city" column, map indices
-      to buckets, and iterate through the "salary"
-      column to sum values into those buckets
+    - manually hash the "city" column, map indices to buckets,
+      and iterate through the "salary" column to sum values
+      into those buckets
 
 
-Apache DataFusion (avoid)
+Apache DataFusion (avoid for this project)
 -
     - SQL engine built on Arrow
     - similar to Polars
-    - much heavier, not optimized for browser like
-      Polars is
-
+    - much heavier, not optimized for browser like Polars is
+    - may use this later on for backend table database-esk
+      actionsa... may revisit at that point
 
 
 
 Arrow Purist: Streaming Raw Arrow / Arrow IPC Ingestion:
 -
     - open a WebSocket and stream raw bytes
-    - do not need 100% of data to arrive before we can access it
+    - do not need 100% of data to arrive before we can access
+      it
     - 1) Arrow Schema arrives (the first 1KB)
-    -    Polars (which uses Arrow under the hood) knows the column names
+    -    Polars (which uses Arrow under the hood) knows the
+         column names
     - 2) First N rows arrive (the next nKb)
     -    Polars can render these rows on the screen
     - ...
-    - (server): serializes a RecordBatch into Arrow IPC Streaming format
-        basically a raw memory dump
+    - (server): serializes a RecordBatch into Arrow IPC
+      Streaming format basically a raw memory dump
     - (network): sends bytes
     - (client): receives the Uint8Array. Pass this array into
-        arrow::ipc::reader::StreamReader.
+      arrow::ipc::reader::StreamReader.
 
 Arrow Purist: Storage
 -
-    - In Rust, our table would look like this...
-    struct UserTable {
-        ids: Int32Array,      // [1, 2, 3, ...]
-        names: StringArray,   // ["Alice", "Bob", "Charlie", ...]
-        scores: Float32Array, // [95.5, 88.0, 42.0, ...]}
+    - In Rust, our table would look like this...  struct
+      UserTable { ids: Int32Array,      // [1, 2, 3, ...]
+      names: StringArray,   // ["Alice", "Bob", "Charlie",
+      ...] scores: Float32Array, // [95.5, 88.0, 42.0, ...]}
 
 
 Arrow Purist: code for manual manipulation
 -
     - build exactly the features we need using the low level
       kernels: 'filter', 'take', 'sort_to_indices'
-    - 'arrow::compute' module as the toolkit for SQL-esk actions
+    - 'arrow::compute' module as the toolkit for SQL-esk
+      actions
     - SQL: SELECT * WHERE scores > 90
     - arrow-rs: 
         - use 'gt_scalar' kernel on 'scores' array to return a
           bool bitmask [False, False, True, ...]
         - use 'filter' kernel on **every column** w/ bitmask
-          filter(ids, mask) -> [1]
-          filter(names, mask) -> ["Alice"]
-          filter(scores, mask) -> [95.5]
+          filter(ids, mask) -> [1] filter(names, mask) ->
+          ["Alice"] filter(scores, mask) -> [95.5]
 
 Arrow Purist: render to UI
 -
-    - Strategy A: (preferred) only send the rows currently visible on the
-      screen to JS (negligible cost)
+    - Strategy A: (preferred) only send the rows currently
+      visible on the screen to JS (negligible cost)
         - user scrolls to rows 100-120
         - rust slices the arrays at 100-120
         - Rust converts just those rows to a JS Array/Object
         - JS renders 20 'div's
         - negligible cost
-    - Strategy B: (advanced) shared buffer, pass a pointer to the
-      Arrow memory directly to JS
-        - JS uses the apache-arrow library to wrap a view arount
-          the WASM memory
+    - Strategy B: (advanced) shared buffer, pass a pointer to
+      the Arrow memory directly to JS
+        - JS uses the apache-arrow library to wrap a view
+          arount the WASM memory
         - JS reads the data without Rust doing any work
 
 
 Arrow Purist: manual_arrowrs_examples.rs
 -
     - Why this demonstrates the "Lightweight" Advantage
-    - Dependencies: This script only requires arrow. It does not require
-      polars, polars-core, polars-lazy, sqlparser, or serde. The resulting WASM
-      binary will be significantly smaller.
+    - Dependencies: This script only requires arrow. It does
+      not require polars, polars-core, polars-lazy, sqlparser,
+      or serde. The resulting WASM binary will be
+      significantly smaller.
     - 
     - No "Black Box":
-    - In the group_by_example, you chose to use a HashMap. You could have
-      chosen to sort and slice if memory was tight. In Polars, the engine
-      chooses for you.
-    - In unique_operations_example, you can see how we built a HashMap<&str,
-      Vec<usize>>. This &str references the actual bytes inside the Arrow
-      array. We didn't allocate new strings for the keys. This level of memory
-      control is difficult in high-level DataFrame libraries.
+    - In the group_by_example, you chose to use a HashMap. You
+      could have chosen to sort and slice if memory was tight.
+      In Polars, the engine chooses for you.
+    - In unique_operations_example, you can see how we built a
+      HashMap<&str, Vec<usize>>.  This &str references the
+      actual bytes inside the Arrow array. We didn't allocate
+      new strings for the keys. This level of memory control
+      is difficult in high-level DataFrame libraries.
     - 
     - Direct Access:
-    - The loop for i in 0..batch.num_rows() with sales.value(i) compiles down
-      to a very tight CPU loop, similar to C++. There is no "Expression
-      Evaluation" overhead checking data types at runtime for every row.
+    - The loop for i in 0..batch.num_rows() with
+      sales.value(i) compiles down to a very tight CPU loop,
+      similar to C++. There is no "Expression Evaluation"
+      overhead checking data types at runtime for every row.
 
 
 Arrow Purist: sending large compressed v small pieces over network
@@ -382,46 +377,52 @@ Arrow Purist: sending large compressed v small pieces over network
 
 Arrow Purist: compressed data transfers
 -
-    - Format:
-        'Arrow IPC File Format'
-        or
-        'Stream Format' with ZSTD
-    - use ZSTD, natively supported by Arrow, high compression ratio
+    - Format: 'Arrow IPC File Format' or 'Stream Format' with
+      ZSTD
+    - use ZSTD, natively supported by Arrow, high compression
+      ratio
 
 Arrow Purist: server side - compressed data transfer - Rust code
 -
-    use arrow::ipc::writer::{FileWriter, IpcWriteOptions};
-    use arrow::ipc::compression::CompressionType;
-    
-    fn send_large_compressed_data(batch: &RecordBatch) -> Vec<u8> {
-        let mut buffer = Vec::new();
-    
-        // 1. Configure Compression (ZSTD is usually best for size)
-        let options = IpcWriteOptions::try_new()
-            .with_compression(Some(CompressionType::ZSTD))
-            .unwrap();
-    
-        // 2. Create the Writer with these options
-        let mut writer = FileWriter::try_new_with_options(
-            &mut buffer,
-            batch.schema(),
-            options
-        ).unwrap();
-    
-        // 3. Write and Finish
-        writer.write(batch).unwrap();
-        writer.finish().unwrap();
-    
-        buffer // This Vec<u8> is now highly compressed}
+
+
+use arrow::ipc::writer::{FileWriter, IpcWriteOptions};
+use arrow::ipc::compression::CompressionType;
+
+fn send_large_compressed_data(batch: &RecordBatch) -> Vec<u8> {
+    let mut buffer = Vec::new();
+
+    // 1. Configure Compression (ZSTD is usually best for size)
+    let options = IpcWriteOptions::try_new()
+        .with_compression(Some(CompressionType::ZSTD))
+        .unwrap();
+
+    // 2. Create the Writer with these options
+    let mut writer = FileWriter::try_new_with_options(
+        &mut buffer, 
+        batch.schema(), 
+        options
+    ).unwrap();
+
+    // 3. Write and Finish
+    writer.write(batch).unwrap();
+    writer.finish().unwrap();
+
+    buffer // This Vec<u8> is now highly compressed
+}
+
+// Client Cargo.toml
+[dependencies]
+arrow = { version = "53.0", features = ["ipc_compression"] }
+
 
 
 Arrow Purist: client side - compressed data transfer - Rust code
 -
-    - reader auto-detects compression as long as the feature is enabled in
-      Cargo.toml, dont need to change reading logic
-    // client Cargo.toml
-    [dependencies]
-    arrow = { version = "53.0", features = ["ipc_compression"] }
+    - reader auto-detects compression as long as the feature
+      is enabled in Cargo.toml, dont need to change reading
+      logic // client Cargo.toml [dependencies] arrow = {
+          version = "53.0", features = ["ipc_compression"] }
 
 
 
@@ -430,65 +431,317 @@ Arrow Purist: uncompressed real-time streaming
 -
     format: 'Arrow IPC Streaming Format'
 
+// SCENARIO: Low Latency (Arrow IPC)
+// Best for: WebSocket updates, small chunks, instant visualization
+pub fn get_realtime_stream_chunk() -> Vec<u8> {
+    let mut df = create_dummy_df();
+    let mut buffer = Cursor::new(Vec::new());
+
+    // IpcStreamWriter corresponds to "Stream Format" (not File format)
+    // It creates the raw Arrow bytes exactly as they exist in memory
+    IpcStreamWriter::new(&mut buffer)
+        .finish(&mut df)
+        .unwrap();
+
+    println!("IPC Stream Size: {} bytes", buffer.get_ref().len());
+    buffer.into_inner()
+}
+
+
+// ALTERNATE IMPLEMENTATION of Low Latency (Arrow IPC)
+use polars::prelude::*;
+use std::io::Cursor;
+
+pub fn stream_update(df: &mut DataFrame) -> Vec<u8> {
+    let mut buffer = Cursor::new(Vec::new());
+    
+    // IpcWriter writes the "Stream" format (no file footer, optimized for streams)
+    IpcStreamWriter::new(&mut buffer)
+        .finish(df)
+        .unwrap();
+
+    buffer.into_inner()
+}
+
+
 
 Arrow Purist: server side - compressed data transfer - Rust code
 -
-    - keep the writer open and 'flush' immediately after every write
-    use arrow::ipc::writer::{StreamWriter, IpcWriteOptions};
+    - keep the writer open and 'flush' immediately after every
+      write
+
+use arrow::ipc::writer::{StreamWriter, IpcWriteOptions};
+
+// Imagine this function runs inside a WebSocket loop
+fn stream_realtime_update(batch: &RecordBatch) -> Vec<u8> {
+    let mut buffer = Vec::new();
+
+    // 1. No Compression Options (Default is None)
+    let options = IpcWriteOptions::default();
+
+    // 2. Create Stream Writer
+    // Note: We use StreamWriter, not FileWriter. 
+    // StreamWriter is optimized for sequential processing.
+    let mut writer = StreamWriter::try_new_with_options(
+        &mut buffer, 
+        batch.schema(), 
+        options
+    ).unwrap();
+
+    // 3. Write the batch
+    writer.write(batch).unwrap();
     
-    // Imagine this function runs inside a WebSocket loop
-    fn stream_realtime_update(batch: &RecordBatch) -> Vec<u8> {
-        let mut buffer = Vec::new();
-    
-        // 1. No Compression Options (Default is None)
-        let options = IpcWriteOptions::default();
-    
-        // 2. Create Stream Writer
-        // Note: We use StreamWriter, not FileWriter. 
-        // StreamWriter is optimized for sequential processing.
-        let mut writer = StreamWriter::try_new_with_options(
-            &mut buffer, 
-            batch.schema(), 
-            options
-        ).unwrap();
-    
-        // 3. Write the batch
-        writer.write(batch).unwrap();
-        
-        // 4. IMPORTANT: Finish/Flush explicitly if sending discrete messages
-        writer.finish().unwrap(); 
-    
-        buffer{ // This is raw, uncompressed Arrow bytes ready for the wire
+    // 4. IMPORTANT: Finish/Flush explicitly if sending discrete messages
+    writer.finish().unwrap(); 
+
+    buffer // This is raw, uncompressed Arrow bytes ready for the wire
+}
+
 
 Arrow Purist: Note on Web Socket Streaming Architecture
 -
     - 2 choices...
-    - Discrete Messages: You create a new StreamWriter for every WebSocket
-      message. Each message contains the Schema + 1 RecordBatch. This is
-      easiest to implement but adds a tiny overhead (sending the schema every
-      time).
+    - Discrete Messages: You create a new StreamWriter for
+      every WebSocket message.  Each message contains the
+      Schema + 1 RecordBatch. This is easiest to implement but
+      adds a tiny overhead (sending the schema every time).
     - 
-    - Continuous Stream: You send the Schema once when the WebSocket connects.
-      Then, for every update, you only send the bytes for the RecordBatch. On
-      the client, you feed these chunks into a continuous StreamDecoder.
+    - Continuous Stream: You send the Schema once when the
+      WebSocket connects.  Then, for every update, you only
+      send the bytes for the RecordBatch. On the client, you
+      feed these chunks into a continuous StreamDecoder.
 
 
 Arrow Purist: Stream v Compression: when to use:
 -
-    - use compressed data transfer approach for initial login etc
+    - use compressed data transfer approach for initial login
+      etc
     - use streaming for real-time updates
+
+
+Advantages of Server: Arrow/Polars -> Arrow IPC -> Client: Arrow/Polars
+-
+    - WASM Optimization: The Polars WASM library (polars on
+      npm) is optimized to accept Uint8Array buffers
+      containing Arrow IPC data.
+    - Zero-Conversion: Polars DataFrame objects are backed by
+      arrow::RecordBatch. Writing to IPC is just a memcpy of
+      the underlying buffers.
+    - Shared Semantics: Polars-to-Polars via Arrow preserves
+      all data types perfectly (including Nulls, Categoricals,
+      and Timezones).
+
+Use Parquet for compression when using Polars/Arrow
+-
+    - Parquet is the native "disk" format in the Arrow/Polars
+      ecosystem
+    - thus, has much better compression ratios than
+      ZSTD-compressed IPC
+    - because, it uses column-specific encodings
+    - like, Run-Length Encoding and Delta Encoding before
+      applying the compression algoritm
+
+Process for Parquet as the compressed data transfer
+-
+    - server writes data to parquet with compression directly
+      into the buffer
+    - client uses pl.readParquet(buffer)
+
+
+
+-------------------------
+(revisit note section)
+-------------------------
+conflicting information: which is better for sending
+compressed data over the network?
+    A) arrow ZSTD compression + Arrow IPC
+    B) buffer = parquet_table.to_parquet(compression = ZSTD)
+
+-------------------------
+start of A (revisit note section)
+-------------------------
+use arrow::ipc::writer::{FileWriter, IpcWriteOptions};
+use arrow::ipc::compression::CompressionType;
+
+fn send_large_compressed_data(batch: &RecordBatch) -> Vec<u8> {
+    let mut buffer = Vec::new();
+
+    // 1. Configure Compression (ZSTD is usually best for size)
+    let options = IpcWriteOptions::try_new()
+        .with_compression(Some(CompressionType::ZSTD))
+        .unwrap();
+
+    // 2. Create the Writer with these options
+    let mut writer = FileWriter::try_new_with_options(
+        &mut buffer, 
+        batch.schema(), 
+        options
+    ).unwrap();
+
+    // 3. Write and Finish
+    writer.write(batch).unwrap();
+    writer.finish().unwrap();
+
+    buffer // This Vec<u8> is now highly compressed
+}
+
+-------------------------
+end of A (revisit note section)
+-------------------------
+
+    
+-------------------------
+start of B (revisit note section)
+-------------------------
+use polars::prelude::*;
+use std::io::Cursor;
+
+pub fn send_large_history(df: &mut DataFrame) -> Vec<u8> {
+    let mut buffer = Cursor::new(Vec::new());
+    
+    ParquetWriter::new(&mut buffer)
+        .with_compression(ParquetCompression::Zstd(None))
+        .finish(df)
+        .unwrap();
+
+    buffer.into_inner()
+}
+
+-------------------------
+end of B (revisit note section)
+-------------------------
+
+
+
+
+'Inserting' additional data into client table
+-
+    - Polars DataFrame/Arrow: immutable
+    - can only 'append' by linking existing table to the start
+      of a new table segment
+    - columns are 'ChunkedArray', not necessarily contiguous
+    - column can effectively be a list of pointers to several
+      distinct memory buffers
+    - to insert new data to an existing table...
+        Vertical Stack ('vstack')
+    - causes chunking, causes performance cost
+        - querying fragmented data means CPU can not use SIMD
+          (vectorization) efficiently across boundaries
+    - fix: periodically trigger a 'rechunk' operation
+    - 'rechunk': allocate and copy to a new, large, contiguous block
+    - trigger rechunk:
+        a) after every ~100 inserts
+        b) before large operations like sort/groupby
+
+Arrow Builders: Potential Hybrid Efficient Approach to aggregating data cleanly on the client
+-
+    - Standard approach w/o builders:
+    1) Receive: Client receives bytes from Server.
+    2) Deserialize: Bytes become a temporary SmallDataFrame.
+    3) Validate: Ensure SmallDataFrame schema matches MainDataFrame schema
+    3) Stack: MainDataFrame.vstack(SmallDataFrame). (Instant, Zero-Copy).
+    4) Monitor: check the number of chunks, trigger MainDataFrame.rechunk()
+    - .
+    - ***Arrow Builders approach***: Double Buffering / Batching via Builders
+        - avoid 'vstack' fragmenting many small incoming rows
+        - use this with small, repeated, real-time updates to avoid
+          fragmentation
+        - set fragmentation chunk size and buffer latency
+        - hybrid memory model:
+            - create a hot buffer (standard) for incoming data
+            - systematically flush to 'cold' well formatted
+              data held by client
+        - detriment: otherwise, row-by-row incoming data would
+          be immediatly visible to the UI, rather than being
+          stuck in the Builder buffer until it reaches 500ms
+          or 1000 rows
+    1) Allocate a Builder ('Int32Builder' or 'StringBuilder')
+        - call '.reserve(1000)'
+        (allocates contiguous block of memory)
+        - data streams from server into this builder on the
+          client
+        - extremely fast because memory is already allocated
+        - cpu writes to next memory address, increments the
+          address index
+        - cpu cache local to L1/L2 because it is constantly
+          written to and contiguous
+    2) 'freeze' the buffer
+        - once the counter hits the overflow point (set to
+          1000 rows earlier) or 500ms, perform a Finish operation
+        - call 'builder.finish()'
+        - buffer *gives up ownership* of the memory block
+        - flips permission on the memory block from a
+          **mutable** list to an **immutable** Arrow Array
+        - zero-copy
+    3) stack pointer swapping
+        - continue with standard approach using these more
+          appropriately:
+        1) 'vstack' (append) the 'RecordBatch' / Polars
+        DataFrame
+        2) Polars adds the pointer to the new block to the
+        list of chunks
+        *3)* allocate a new Builder
+        4) repeat
+
+
+
+
+Server API Endpoint: how to receive and use requests from the client
+-
+    alpha) client sends a struct holding values in fields to
+    the WebSocket rust server
+    1) rust server sits an an infinite loop waiting for
+    network packets (WebSocket messages)
+    2) enter the action of the loop when a message is received
+    3) use the variables/values inside the message/struct, pass to
+    polars fxn etc
+    ie
+    // server receives 'request' instance
+    df.filter(
+        col(**&request.col**).eq(
+        lit(**&request.val**)))
+    .unwrap()
+    .head(
+        Some(**request.limit**));
+    // end of example
+    4) return appropriate response
+
+    OR
+    - let client send SQL context to the server
+    - use polars_sql::SQLContext
+    - SQL engine parses the string at runtime and executes the
+      correct Polars functions
+    
+
+
+Pure Rust -> UI: egpu
+-
+    The "Canvas" Approach (egui)
+Best for: High-performance dashboards, trading terminals, or if you want it to look like a desktop app.
+
+egui does not use HTML <table> or <div> tags. It draws everything (text, borders, buttons) onto a WebGL Canvas using GPU acceleration. It bypasses the browser DOM entirely.
+
+Pros: Insanely fast. You can render 10,000 rows at 60FPS because it's just pixels on a GPU texture. No "Javascript/DOM" overhead.
+
+Cons: It doesn't look like a native website. Text selection and accessibility (screen readers) are often limited.
+    - https://www.egui.rs/#clock
+    - https://emilk.github.io/egui_plot/
+    - https://github.com/emilk/egui_plot
+    - https://github.com/rerun-io/rerun
+
 
 
 
 
 
     - handle massive datasets without overwhelming the browser
-    - while maintaining instant interactivity for smaller, aggregated datasets
+    - while maintaining instant interactivity for smaller,
+      aggregated datasets
 
     - "Hybrid Data Strategy"... seamlessly switches between:
-        **Client-Side Processing** (for summary data)
-        **Server-Side Processing** (for massive granular data)
-    within the same user interface.
+      **Client-Side Processing** (for summary data)
+      **Server-Side Processing** (for massive granular data)
+      within the same user interface.
 
 
 ## **2\. Architecture Overview**
@@ -496,60 +749,67 @@ Arrow Purist: Stream v Compression: when to use:
 ### **The Tech Stack**
 
 * **Backend:** **Rust** (High-performance systems language)
-  * *Framework:* Tonic (gRPC implementation) \+ Tonic-Web (Browser compatibility).
-  * *Role:* Data generation, heavy sorting, filtering, and aggregation.
+  * *Framework:* Tonic (gRPC implementation) \+ Tonic-Web
+    (Browser compatibility).
+  * *Role:* Data generation, heavy sorting, filtering, and
+    aggregation.
 * **Protocol:** **gRPC-Web** (Binary over HTTP)
-  * *Role:* Strongly typed, bandwidth-efficient communication between browser and server.
+  * *Role:* Strongly typed, bandwidth-efficient communication
+    between browser and server.
   * *Schema:* Defined via Protocol Buffers (.proto).
 * **Frontend:** **TypeScript** \+ **Next.js** (React)
   * *Client:* ConnectRPC (Modern gRPC client for web).
-  * *State/UI:* TanStack Table (Headless UI library for data grids).
+  * *State/UI:* TanStack Table (Headless UI library for data
+    grids).
 
 ### **Architecture Diagram**
 
 Code snippet
 
-graph LR
-    subgraph Browser \[Frontend: Next.js\]
-        UI\[User Interface\]
-        RegionTable\[Region Table \<br/\> (Client-Side Sort)\]
-        ShipmentTable\[Shipment Table \<br/\> (Server-Side Sort)\]
-        Connect\[ConnectRPC Client\]
+graph LR subgraph Browser \[Frontend: Next.js\] UI\[User
+Interface\] RegionTable\[Region Table \<br/\> (Client-Side
+Sort)\] ShipmentTable\[Shipment Table \<br/\> (Server-Side
+Sort)\] Connect\[ConnectRPC Client\] end
+
+    subgraph Network \[gRPC-Web\] Proto\[Binary Stream\] end
+
+    subgraph Server \[Backend: Rust\] Tonic\[Tonic gRPC
+    Server\] MockDB\[Mock Database \<br/\> (10k Rows RAM)\]
     end
 
-    subgraph Network \[gRPC-Web\]
-        Proto\[Binary Stream\]
-    end
-
-    subgraph Server \[Backend: Rust\]
-        Tonic\[Tonic gRPC Server\]
-        MockDB\[Mock Database \<br/\> (10k Rows RAM)\]
-    end
-
-    UI \--\> RegionTable
-    UI \--\> ShipmentTable
-    RegionTable \-- "Fetch Once (All Data)" \--\> Connect
-    ShipmentTable \-- "Fetch Page/Sort" \--\> Connect
-    Connect \<--\> Proto \<--\> Tonic
-    Tonic \<--\> MockDB
+    UI \--\> RegionTable UI \--\> ShipmentTable RegionTable
+    \-- "Fetch Once (All Data)" \--\> Connect ShipmentTable
+    \-- "Fetch Page/Sort" \--\> Connect Connect \<--\> Proto
+    \<--\> Tonic Tonic \<--\> MockDB
 
 ---
 
 ## **3\. The Hybrid Data Strategy**
 
-This PoC specifically demonstrates two distinct patterns for handling data, proving that we are not locked into a single approach.
+This PoC specifically demonstrates two distinct patterns for
+handling data, proving that we are not locked into a single
+approach.
 
 ### **Pattern A: "Big Data" (Shipment Manifest)**
 
-* **Use Case:** Granular records, logs, or datasets \> 10,000 rows (potentially millions).
-* **Mechanism:** The browser acts as a "remote control." It holds only the data currently visible (e.g., 50 rows).
-* **User Experience:** When the user sorts by "Weight," the browser sends a request to the server. The server sorts the full dataset and returns only the top 50 results. This ensures the browser never crashes from memory overload.
+* **Use Case:** Granular records, logs, or datasets \> 10,000
+  rows (potentially millions).
+* **Mechanism:** The browser acts as a "remote control." It
+  holds only the data currently visible (e.g., 50 rows).
+* **User Experience:** When the user sorts by "Weight," the
+  browser sends a request to the server. The server sorts the
+  full dataset and returns only the top 50 results. This
+  ensures the browser never crashes from memory overload.
 
 ### **Pattern B: "Small Data" (Region Stats)**
 
-* **Use Case:** High-level aggregations, summaries, or datasets \< 5,000 rows.
-* **Mechanism:** The server calculates the aggregation *once* and sends the complete list to the browser.
-* **User Experience:** Sorting and filtering are **instant** (0ms latency) because they occur in the browser's CPU. No network requests are made after the initial load.
+* **Use Case:** High-level aggregations, summaries, or
+  datasets \< 5,000 rows.
+* **Mechanism:** The server calculates the aggregation *once*
+  and sends the complete list to the browser.
+* **User Experience:** Sorting and filtering are **instant**
+  (0ms latency) because they occur in the browser's CPU. No
+  network requests are made after the initial load.
 
 ---
 
@@ -557,23 +817,20 @@ This PoC specifically demonstrates two distinct patterns for handling data, prov
 
 Plaintext
 
-/fxgraph
-├── /proto  
-│   └── dashboard.proto       \# Single Source of Truth (Schema)  
-├── /backend  
-│   ├── build.rs              \# Pre-build script: Compiles .proto to Rust  
-│   ├── Cargo.toml            \# Rust dependencies  
-│   └── src/main.rs           \# Server entry point, Mock DB, Business Logic  
-└── /frontend  
-    ├── buf.gen.yaml          \# Buf configuration for TS generation  
-    ├── package.json         \# Dependencies (ConnectRPC, TanStack Table)
-    ├── app/page.tsx         \# Main UI combining both tables
-    ├── lib/client.ts         \# ConnectRPC Transport singleton  
-    ├── components/  
-    │   ├── columns.ts       \# TanStack Column Definitions
-    │   ├── DashboardTable.tsx \# Server-Side Sort Implementation  
-    │   └── RegionTable.tsx    \# Client-Side Sort Implementation  
-    └── gen/                  \# Auto-generated TS types (DO NOT EDIT)
+/fxgraph ├── /proto  │   └── dashboard.proto \# Single Source
+of Truth (Schema)  ├── /backend │   ├── build.rs
+\# Pre-build script: Compiles .proto to Rust  │   ├──
+Cargo.toml            \# Rust dependencies  │ └── src/main.rs
+\# Server entry point, Mock DB, Business Logic  └── /frontend
+├── buf.gen.yaml          \# Buf configuration for TS
+generation  ├── package.json         \# Dependencies
+(ConnectRPC, TanStack Table) ├── app/page.tsx         \# Main
+UI combining both tables ├── lib/client.ts         \#
+ConnectRPC Transport singleton  ├── components/  │   ├──
+columns.ts       \# TanStack Column Definitions │ ├──
+DashboardTable.tsx \# Server-Side Sort Implementation  │   └──
+RegionTable.tsx    \# Client-Side Sort Implementation  └──
+gen/ \# Auto-generated TS types (DO NOT EDIT)
 
 ---
 
@@ -581,35 +838,38 @@ Plaintext
 
 ### **The Schema (dashboard.proto)**
 
-This file is the single source of truth. If this file changes, both the Backend and Frontend builds will fail, ensuring type safety.
+This file is the single source of truth. If this file changes,
+both the Backend and Frontend builds will fail, ensuring type
+safety.
 
 Protocol Buffers
 
-service AnalyticsService {
-  // Pattern A: Big Data (Server does the work)
-  rpc GetShipments (ViewRequest) returns (ViewResponse);
+service AnalyticsService { // Pattern A: Big Data (Server does
+the work) rpc GetShipments (ViewRequest) returns
+(ViewResponse);
 
-  // Pattern B: Small Data (Client does the work)
-  rpc GetRegionStats (Empty) returns (RegionList);
-}
+  // Pattern B: Small Data (Client does the work) rpc
+  GetRegionStats (Empty) returns (RegionList); }
 
 ### **The Rust Backend (backend/src/main.rs)**
 
 * **Mock Data:** Generates 10,000 random shipments on startup.
-* **CORS:** Configured using tower-http to allow the Next.js frontend to read gRPC headers (grpc-status).
-* **Logic:** Implements a custom sort comparator to handle dynamic column sorting (e.g., sorting by Timestamp vs. Weight) on the server.
+* **CORS:** Configured using tower-http to allow the Next.js
+  frontend to read gRPC headers (grpc-status).
+* **Logic:** Implements a custom sort comparator to handle
+  dynamic column sorting (e.g., sorting by Timestamp vs.
+  Weight) on the server.
 
 ### **The Frontend Client (frontend/lib/client.ts)**
 
-Uses **ConnectRPC** to communicate. This abstracts away the binary parsing.
+Uses **ConnectRPC** to communicate. This abstracts away the
+binary parsing.
 
 TypeScript
 
-// Example usage
-const response \= await client.getShipments({
-  pageNumber: 1,
-  sort: { columnId: "cargoWeightKg", isAscending: false }
-});
+// Example usage const response \= await client.getShipments({
+    pageNumber: 1, sort: { columnId: "cargoWeightKg",
+    isAscending: false } });
 
 ---
 
@@ -619,7 +879,8 @@ const response \= await client.getShipments({
 
 1. **Rust:** Install via rustup.
 2. **Node.js:** Install Node v18+.
-3. **Buf:** (Optional but recommended) for efficient code generation, though npm scripts handle it in this PoC.
+3. **Buf:** (Optional but recommended) for efficient code
+generation, though npm scripts handle it in this PoC.
 
 ### **Step 1: Start the Backend**
 
@@ -627,9 +888,8 @@ The backend must be running to serve gRPC requests.
 
 Bash
 
-cd backend
-cargo run
-\# Expected Output: Server listening on 0.0.0.0:50051
+cd backend cargo run \# Expected Output: Server listening on
+0.0.0.0:50051
 
 ### **Step 2: Start the Frontend**
 
@@ -637,25 +897,33 @@ Open a new terminal window.
 
 Bash
 
-cd frontend
-npm install
-npm run dev
-\# Expected Output: Ready in 2.3s. Listening on http://localhost:3000
+cd frontend npm install npm run dev \# Expected Output: Ready
+in 2.3s. Listening on http://localhost:3000
 
 ### **Step 3: Verify**
 
 Navigate to http://localhost:3000.
 
-1. **Test Region Table:** Click the "Revenue" header. It should sort instantly. Check the Backend terminal—you should see **no** new logs.
-2. **Test Shipment Table:** Click the "Weight" header. It should take a brief moment. Check the Backend terminal—you should see a log entry: Request received for page: 1\.
+1. **Test Region Table:** Click the "Revenue" header. It
+should sort instantly. Check the Backend terminal—you should
+see **no** new logs.
+2. **Test Shipment Table:** Click the "Weight" header. It
+should take a brief moment. Check the Backend terminal—you
+should see a log entry: Request received for page: 1\.
 
 ---
 
 ## **7\. Future Considerations (Post-PoC)**
 
-* **Database:** Replace the in-memory Vec\<MockShipment\> with a connection pool to PostgreSQL (using sqlx) or ClickHouse for analytics.
-* **Filtering:** The .proto file already supports FilterCriteria. We can implement SQL WHERE clause generation in Rust to support complex filtering.
-* **Streaming:** For data exports (e.g., "Download CSV"), we can utilize gRPC Server Streaming to send data in chunks without buffering.
+* **Database:** Replace the in-memory Vec\<MockShipment\> with
+  a connection pool to PostgreSQL (using sqlx) or ClickHouse
+  for analytics.
+* **Filtering:** The .proto file already supports
+  FilterCriteria. We can implement SQL WHERE clause generation
+  in Rust to support complex filtering.
+* **Streaming:** For data exports (e.g., "Download CSV"), we
+  can utilize gRPC Server Streaming to send data in chunks
+  without buffering.
 
 
 
@@ -665,11 +933,11 @@ TECHNICAL
 
 
 
-# **Technical Specification: Logistics Analytics Dashboard (PoC)**
+# **Technical Specification: Logistics Analytics Dashboard
+(PoC)**
 
-Version: 1.0 (PoC)  
-Date: November 23, 2025  
-Architecture: Hybrid Client/Server Data Processing via gRPC-Web.
+Version: 1.0 (PoC)  Date: November 23, 2025 Architecture:
+Hybrid Client/Server Data Processing via gRPC-Web.
 
 ---
 
@@ -678,24 +946,33 @@ Architecture: Hybrid Client/Server Data Processing via gRPC-Web.
 ### **Backend (Service Layer)**
 
 * **Runtime:** Rust (Edition 2021\)  
-* **Framework:** tonic (v0.12) \- Native gRPC implementation over HTTP/2.  
-* **Web Interop:** tonic-web (v0.12) \- gRPC-Web translation layer for browser compatibility.  
-* **Async Runtime:** tokio (v1.0+) \- Multi-threaded asynchronous execution.  
-* **Middleware:** tower-http (v0.5) \- Handles CORS and HTTP layer instrumentation.  
-* **Serialization:** prost (v0.13) \- Protocol Buffers implementation for Rust.
+* **Framework:** tonic (v0.12) \- Native gRPC implementation
+  over HTTP/2.  
+* **Web Interop:** tonic-web (v0.12) \- gRPC-Web translation
+  layer for browser compatibility.  
+* **Async Runtime:** tokio (v1.0+) \- Multi-threaded
+  asynchronous execution.  
+* **Middleware:** tower-http (v0.5) \- Handles CORS and HTTP
+  layer instrumentation.  
+* **Serialization:** prost (v0.13) \- Protocol Buffers
+  implementation for Rust.
 
 ### **Frontend (Presentation Layer)**
 
 * **Framework:** Next.js 14+ (React 18\)  
 * **Language:** TypeScript 5+  
-* **Network Client:** ConnectRPC (@connectrpc/connect) \- Type-safe gRPC client.  
-* **Transport:** @connectrpc/connect-web \- Implements the gRPC-Web protocol over HTTP/1.1.  
-* **State/UI Logic:** TanStack Table v8 (@tanstack/react-table) \- Headless data grid.
+* **Network Client:** ConnectRPC (@connectrpc/connect) \-
+  Type-safe gRPC client.  
+* **Transport:** @connectrpc/connect-web \- Implements the
+  gRPC-Web protocol over HTTP/1.1.  
+* **State/UI Logic:** TanStack Table v8
+  (@tanstack/react-table) \- Headless data grid.
 
 ### **Interface Definition**
 
 * **IDL:** Protocol Buffers v3 (proto3)  
-* **Transport Protocol:** gRPC-Web (application/grpc-web+proto)
+* **Transport Protocol:** gRPC-Web
+  (application/grpc-web+proto)
 
 ---
 
@@ -703,23 +980,20 @@ Architecture: Hybrid Client/Server Data Processing via gRPC-Web.
 
 Plaintext
 
-/fxgraph
-├── /proto  
-│   └── dashboard.proto       \# Single Source of Truth (Schema)  
-├── /backend  
-│   ├── build.rs              \# Pre-build script: Compiles .proto to Rust  
-│   ├── Cargo.toml            \# Rust dependencies  
-│   └── src/main.rs           \# Server entry point, Mock DB, Business Logic  
-└── /frontend  
-    ├── buf.gen.yaml          \# Buf configuration for TS generation  
-    ├── package.json         \# Dependencies (ConnectRPC, TanStack Table)
-    ├── app/page.tsx         \# Main UI combining both tables
-    ├── lib/client.ts         \# ConnectRPC Transport singleton  
-    ├── components/  
-    │   ├── columns.ts       \# TanStack Column Definitions
-    │   ├── DashboardTable.tsx \# Server-Side Sort Implementation  
-    │   └── RegionTable.tsx    \# Client-Side Sort Implementation  
-    └── gen/                  \# Auto-generated TS types (DO NOT EDIT)
+/fxgraph ├── /proto  │   └── dashboard.proto \# Single Source
+of Truth (Schema)  ├── /backend │   ├── build.rs
+\# Pre-build script: Compiles .proto to Rust  │   ├──
+Cargo.toml            \# Rust dependencies  │ └── src/main.rs
+\# Server entry point, Mock DB, Business Logic  └── /frontend
+├── buf.gen.yaml          \# Buf configuration for TS
+generation  ├── package.json         \# Dependencies
+(ConnectRPC, TanStack Table) ├── app/page.tsx         \# Main
+UI combining both tables ├── lib/client.ts         \#
+ConnectRPC Transport singleton  ├── components/  │   ├──
+columns.ts       \# TanStack Column Definitions │ ├──
+DashboardTable.tsx \# Server-Side Sort Implementation  │   └──
+RegionTable.tsx    \# Client-Side Sort Implementation  └──
+gen/ \# Auto-generated TS types (DO NOT EDIT)
 
 ---
 
@@ -729,28 +1003,22 @@ The API defines two distinct data access patterns.
 
 Protocol Buffers
 
-syntax \= "proto3";  
-package dashboard;
+syntax \= "proto3";  package dashboard;
 
-service AnalyticsService {  
-  // Pattern A: Server-Side Processing (Pagination/Sorting)  
-  rpc GetShipments (ViewRequest) returns (ViewResponse);
+service AnalyticsService {  // Pattern A: Server-Side
+Processing (Pagination/Sorting)  rpc GetShipments
+(ViewRequest) returns (ViewResponse);
 
-  // Pattern B: Client-Side Processing (Snapshot)  
-  rpc GetRegionStats (Empty) returns (RegionList);  
-}
+  // Pattern B: Client-Side Processing (Snapshot) rpc
+  GetRegionStats (Empty) returns (RegionList);  }
 
-message ViewRequest {  
-  int32 page\_number \= 1;  
-  int32 items\_per\_page \= 2;  
-  SortOption sort \= 3;        // Optional: if null, default sort applies  
-  repeated FilterCriteria filters \= 4;  
-}
+message ViewRequest {  int32 page\_number \= 1; int32
+items\_per\_page \= 2;  SortOption sort \= 3;        //
+Optional: if null, default sort applies  repeated
+FilterCriteria filters \= 4;  }
 
-message SortOption {  
-  string column\_id \= 1;  
-  bool is\_ascending \= 2;  
-}
+message SortOption {  string column\_id \= 1; bool
+is\_ascending \= 2;  }
 
 // ... (See source for full message definitions)
 
@@ -760,31 +1028,37 @@ message SortOption {
 
 ### **4.1 Server Configuration (main.rs)**
 
-The server enables the GrpcWebLayer to translate browser HTTP/1.1 requests into HTTP/2 gRPC calls.
+The server enables the GrpcWebLayer to translate browser
+HTTP/1.1 requests into HTTP/2 gRPC calls.
 
-Crucial Layer Ordering:  
-Middleware layers are wrapped outside-in. CORS must be the outermost layer to handle preflight OPTIONS requests before they reach the gRPC logic.
+Crucial Layer Ordering:  Middleware layers are wrapped
+outside-in. CORS must be the outermost layer to handle
+preflight OPTIONS requests before they reach the gRPC logic.
 
 Rust
 
-Server::builder()  
-    .accept\_http1(true)                   // Required for gRPC-Web  
-    .layer(cors\_layer)                    // 1\. Handle CORS  
-    .layer(GrpcWebLayer::new())           // 2\. Translate gRPC-Web \-\> gRPC  
-    .add\_service(AnalyticsServiceServer::new(service))  
-    .serve(addr)  
-    .await?;
+Server::builder()  .accept\_http1(true) // Required for
+gRPC-Web  .layer(cors\_layer) // 1\. Handle CORS
+.layer(GrpcWebLayer::new()) // 2\. Translate gRPC-Web \-\>
+gRPC .add\_service(AnalyticsServiceServer::new(service))
+.serve(addr)  .await?;
 
 ### **4.2 CORS Configuration**
 
-Browsers enforce strict CORS for gRPC-Web. The tower-http configuration must expose specific gRPC headers, otherwise the client will throw generic protocol errors even on successful requests.
+Browsers enforce strict CORS for gRPC-Web. The tower-http
+configuration must expose specific gRPC headers, otherwise the
+client will throw generic protocol errors even on successful
+requests.
 
-* **Allowed Origin:** MirrorRequest (or explicit localhost:3000)  
-* **Exposed Headers:** grpc-status, grpc-message, grpc-status-details-bin
+* **Allowed Origin:** MirrorRequest (or explicit
+  localhost:3000)  
+* **Exposed Headers:** grpc-status, grpc-message,
+  grpc-status-details-bin
 
 ### **4.3 Data Logic**
 
-* **Mock Data:** Vec\<MockShipment\> generated via rand at startup (10k rows).  
+* **Mock Data:** Vec\<MockShipment\> generated via rand at
+  startup (10k rows).  
 * **get\_shipments (Server Sort):**  
   1. Clones the in-memory vector.  
   2. Performs sort\_by based on request.sort.column\_id.  
@@ -816,28 +1090,25 @@ Instantiates a singleton client using createGrpcWebTransport.
 
 ### **5.3 TanStack Table Configuration**
 
-Scenario A: Server-Side (Big Data)  
-File: DashboardTable.tsx
+Scenario A: Server-Side (Big Data)  File: DashboardTable.tsx
 
 * **Mode:** Manual.  
-* **Configuration:**  
-  TypeScript  
-  manualPagination: true,  
+* **Configuration:**  TypeScript manualPagination: true,
   manualSorting: true,
 
-* **Effect:** Sort/Page state changes trigger useEffect \-\> analyticsClient.getShipments. Table does *not* sort the data array locally.
+* **Effect:** Sort/Page state changes trigger useEffect \-\>
+  analyticsClient.getShipments.  Table does *not* sort the
+  data array locally.
 
-Scenario B: Client-Side (Small Data)  
-File: RegionTable.tsx
+Scenario B: Client-Side (Small Data)  File: RegionTable.tsx
 
 * **Mode:** Automatic.  
-* **Configuration:**  
-  TypeScript  
-  getCoreRowModel: getCoreRowModel(),  
-  getSortedRowModel: getSortedRowModel(), // Enables local sorting  
-  // manualSorting is OMITTED/FALSE
+* **Configuration:**  TypeScript getCoreRowModel:
+  getCoreRowModel(), getSortedRowModel: getSortedRowModel(),
+  // Enables local sorting  // manualSorting is OMITTED/FALSE
 
-* **Effect:** useEffect runs once on mount. Sort state changes are handled entirely by the JS engine via getSortedRowModel.
+* **Effect:** useEffect runs once on mount. Sort state changes
+  are handled entirely by the JS engine via getSortedRowModel.
 
 ---
 
@@ -845,12 +1116,12 @@ File: RegionTable.tsx
 
 ### **6.1 Backend**
 
-**Build Requirement:** protoc (Protocol Buffers Compiler) must be in $PATH, or available via tonic-build.
+**Build Requirement:** protoc (Protocol Buffers Compiler) must
+be in $PATH, or available via tonic-build.
 
 Bash
 
-cd backend  
-\# Compiles .proto via build.rs and starts server  
+cd backend  \# Compiles .proto via build.rs and starts server
 cargo run
 
 ### **6.2 Frontend**
@@ -859,19 +1130,20 @@ cargo run
 
 Bash
 
-cd frontend  
-\# 1\. Install Deps  
-npm install  
-\# 2\. Generate TS Client (if proto changed)  
-npx buf generate ../proto  
-\# 3\. Start Dev Server  
-npm run dev
+cd frontend  \# 1\. Install Deps  npm install  \# 2\. Generate
+TS Client (if proto changed)  npx buf generate ../proto  \#
+3\. Start Dev Server npm run dev
 
 ## **7\. Known Limitations (PoC)**
 
-1. **Data Persistence:** Backend uses ephemeral in-memory Vec. Restarting the server resets data.  
-2. **Error Handling:** Basic Result types. Production should map Results to specific gRPC Status Codes (e.g., Status::invalid\_argument).  
-3. **Security:** No TLS/SSL implemented. Traffic is plaintext HTTP. Production requires a reverse proxy (Nginx/Envoy) or Rust TLS configuration.
+1. **Data Persistence:** Backend uses ephemeral in-memory Vec.
+Restarting the server resets data.  
+2. **Error Handling:** Basic Result types.  Production should
+map Results to specific gRPC Status Codes (e.g.,
+Status::invalid\_argument).  
+3. **Security:** No TLS/SSL implemented. Traffic is plaintext
+HTTP. Production requires a reverse proxy (Nginx/Envoy) or
+Rust TLS configuration.
 
 
 
@@ -880,11 +1152,11 @@ INIT
 
 
 
-# **Technical Specification: Logistics Analytics Dashboard (PoC)**
+# **Technical Specification: Logistics Analytics Dashboard
+(PoC)**
 
-Version: 1.0 (PoC)  
-Date: November 23, 2025  
-Architecture: Hybrid Client/Server Data Processing via gRPC-Web.
+Version: 1.0 (PoC)  Date: November 23, 2025 Architecture:
+Hybrid Client/Server Data Processing via gRPC-Web.
 
 ---
 
@@ -893,24 +1165,33 @@ Architecture: Hybrid Client/Server Data Processing via gRPC-Web.
 ### **Backend (Service Layer)**
 
 * **Runtime:** Rust (Edition 2021\)  
-* **Framework:** tonic (v0.12) \- Native gRPC implementation over HTTP/2.  
-* **Web Interop:** tonic-web (v0.12) \- gRPC-Web translation layer for browser compatibility.  
-* **Async Runtime:** tokio (v1.0+) \- Multi-threaded asynchronous execution.  
-* **Middleware:** tower-http (v0.5) \- Handles CORS and HTTP layer instrumentation.  
-* **Serialization:** prost (v0.13) \- Protocol Buffers implementation for Rust.
+* **Framework:** tonic (v0.12) \- Native gRPC implementation
+  over HTTP/2.  
+* **Web Interop:** tonic-web (v0.12) \- gRPC-Web translation
+  layer for browser compatibility.  
+* **Async Runtime:** tokio (v1.0+) \- Multi-threaded
+  asynchronous execution.  
+* **Middleware:** tower-http (v0.5) \- Handles CORS and HTTP
+  layer instrumentation.  
+* **Serialization:** prost (v0.13) \- Protocol Buffers
+  implementation for Rust.
 
 ### **Frontend (Presentation Layer)**
 
 * **Framework:** Next.js 14+ (React 18\)  
 * **Language:** TypeScript 5+  
-* **Network Client:** ConnectRPC (@connectrpc/connect) \- Type-safe gRPC client.  
-* **Transport:** @connectrpc/connect-web \- Implements the gRPC-Web protocol over HTTP/1.1.  
-* **State/UI Logic:** TanStack Table v8 (@tanstack/react-table) \- Headless data grid.
+* **Network Client:** ConnectRPC (@connectrpc/connect) \-
+  Type-safe gRPC client.  
+* **Transport:** @connectrpc/connect-web \- Implements the
+  gRPC-Web protocol over HTTP/1.1.  
+* **State/UI Logic:** TanStack Table v8
+  (@tanstack/react-table) \- Headless data grid.
 
 ### **Interface Definition**
 
 * **IDL:** Protocol Buffers v3 (proto3)  
-* **Transport Protocol:** gRPC-Web (application/grpc-web+proto)
+* **Transport Protocol:** gRPC-Web
+  (application/grpc-web+proto)
 
 ---
 
@@ -918,23 +1199,20 @@ Architecture: Hybrid Client/Server Data Processing via gRPC-Web.
 
 Plaintext
 
-/fxgraph
-├── /proto  
-│   └── dashboard.proto       \# Single Source of Truth (Schema)  
-├── /backend  
-│   ├── build.rs              \# Pre-build script: Compiles .proto to Rust  
-│   ├── Cargo.toml            \# Rust dependencies  
-│   └── src/main.rs           \# Server entry point, Mock DB, Business Logic  
-└── /frontend  
-    ├── buf.gen.yaml          \# Buf configuration for TS generation  
-    ├── package.json         \# Dependencies (ConnectRPC, TanStack Table)
-    ├── app/page.tsx         \# Main UI combining both tables
-    ├── lib/client.ts         \# ConnectRPC Transport singleton  
-    ├── components/  
-    │   ├── columns.ts       \# TanStack Column Definitions
-    │   ├── DashboardTable.tsx \# Server-Side Sort Implementation  
-    │   └── RegionTable.tsx    \# Client-Side Sort Implementation  
-    └── gen/                  \# Auto-generated TS types (DO NOT EDIT)
+/fxgraph ├── /proto  │   └── dashboard.proto \# Single Source
+of Truth (Schema)  ├── /backend │   ├── build.rs
+\# Pre-build script: Compiles .proto to Rust  │   ├──
+Cargo.toml            \# Rust dependencies  │ └── src/main.rs
+\# Server entry point, Mock DB, Business Logic  └── /frontend
+├── buf.gen.yaml          \# Buf configuration for TS
+generation  ├── package.json         \# Dependencies
+(ConnectRPC, TanStack Table) ├── app/page.tsx         \# Main
+UI combining both tables ├── lib/client.ts         \#
+ConnectRPC Transport singleton  ├── components/  │   ├──
+columns.ts       \# TanStack Column Definitions │ ├──
+DashboardTable.tsx \# Server-Side Sort Implementation  │   └──
+RegionTable.tsx    \# Client-Side Sort Implementation  └──
+gen/ \# Auto-generated TS types (DO NOT EDIT)
 
 ---
 
@@ -944,28 +1222,22 @@ The API defines two distinct data access patterns.
 
 Protocol Buffers
 
-syntax \= "proto3";  
-package dashboard;
+syntax \= "proto3";  package dashboard;
 
-service AnalyticsService {  
-  // Pattern A: Server-Side Processing (Pagination/Sorting)  
-  rpc GetShipments (ViewRequest) returns (ViewResponse);
+service AnalyticsService {  // Pattern A: Server-Side
+Processing (Pagination/Sorting)  rpc GetShipments
+(ViewRequest) returns (ViewResponse);
 
-  // Pattern B: Client-Side Processing (Snapshot)  
-  rpc GetRegionStats (Empty) returns (RegionList);  
-}
+  // Pattern B: Client-Side Processing (Snapshot) rpc
+  GetRegionStats (Empty) returns (RegionList);  }
 
-message ViewRequest {  
-  int32 page\_number \= 1;  
-  int32 items\_per\_page \= 2;  
-  SortOption sort \= 3;        // Optional: if null, default sort applies  
-  repeated FilterCriteria filters \= 4;  
-}
+message ViewRequest {  int32 page\_number \= 1; int32
+items\_per\_page \= 2;  SortOption sort \= 3;        //
+Optional: if null, default sort applies  repeated
+FilterCriteria filters \= 4;  }
 
-message SortOption {  
-  string column\_id \= 1;  
-  bool is\_ascending \= 2;  
-}
+message SortOption {  string column\_id \= 1; bool
+is\_ascending \= 2;  }
 
 // ... (See source for full message definitions)
 
@@ -975,31 +1247,37 @@ message SortOption {
 
 ### **4.1 Server Configuration (main.rs)**
 
-The server enables the GrpcWebLayer to translate browser HTTP/1.1 requests into HTTP/2 gRPC calls.
+The server enables the GrpcWebLayer to translate browser
+HTTP/1.1 requests into HTTP/2 gRPC calls.
 
-Crucial Layer Ordering:  
-Middleware layers are wrapped outside-in. CORS must be the outermost layer to handle preflight OPTIONS requests before they reach the gRPC logic.
+Crucial Layer Ordering:  Middleware layers are wrapped
+outside-in. CORS must be the outermost layer to handle
+preflight OPTIONS requests before they reach the gRPC logic.
 
 Rust
 
-Server::builder()  
-    .accept\_http1(true)                   // Required for gRPC-Web  
-    .layer(cors\_layer)                    // 1\. Handle CORS  
-    .layer(GrpcWebLayer::new())           // 2\. Translate gRPC-Web \-\> gRPC  
-    .add\_service(AnalyticsServiceServer::new(service))  
-    .serve(addr)  
-    .await?;
+Server::builder()  .accept\_http1(true) // Required for
+gRPC-Web  .layer(cors\_layer) // 1\. Handle CORS
+.layer(GrpcWebLayer::new()) // 2\. Translate gRPC-Web \-\>
+gRPC .add\_service(AnalyticsServiceServer::new(service))
+.serve(addr)  .await?;
 
 ### **4.2 CORS Configuration**
 
-Browsers enforce strict CORS for gRPC-Web. The tower-http configuration must expose specific gRPC headers, otherwise the client will throw generic protocol errors even on successful requests.
+Browsers enforce strict CORS for gRPC-Web. The tower-http
+configuration must expose specific gRPC headers, otherwise the
+client will throw generic protocol errors even on successful
+requests.
 
-* **Allowed Origin:** MirrorRequest (or explicit localhost:3000)  
-* **Exposed Headers:** grpc-status, grpc-message, grpc-status-details-bin
+* **Allowed Origin:** MirrorRequest (or explicit
+  localhost:3000)  
+* **Exposed Headers:** grpc-status, grpc-message,
+  grpc-status-details-bin
 
 ### **4.3 Data Logic**
 
-* **Mock Data:** Vec\<MockShipment\> generated via rand at startup (10k rows).  
+* **Mock Data:** Vec\<MockShipment\> generated via rand at
+  startup (10k rows).  
 * **get\_shipments (Server Sort):**  
   1. Clones the in-memory vector.  
   2. Performs sort\_by based on request.sort.column\_id.  
@@ -1031,28 +1309,25 @@ Instantiates a singleton client using createGrpcWebTransport.
 
 ### **5.3 TanStack Table Configuration**
 
-Scenario A: Server-Side (Big Data)  
-File: DashboardTable.tsx
+Scenario A: Server-Side (Big Data)  File: DashboardTable.tsx
 
 * **Mode:** Manual.  
-* **Configuration:**  
-  TypeScript  
-  manualPagination: true,  
+* **Configuration:**  TypeScript manualPagination: true,
   manualSorting: true,
 
-* **Effect:** Sort/Page state changes trigger useEffect \-\> analyticsClient.getShipments. Table does *not* sort the data array locally.
+* **Effect:** Sort/Page state changes trigger useEffect \-\>
+  analyticsClient.getShipments.  Table does *not* sort the
+  data array locally.
 
-Scenario B: Client-Side (Small Data)  
-File: RegionTable.tsx
+Scenario B: Client-Side (Small Data)  File: RegionTable.tsx
 
 * **Mode:** Automatic.  
-* **Configuration:**  
-  TypeScript  
-  getCoreRowModel: getCoreRowModel(),  
-  getSortedRowModel: getSortedRowModel(), // Enables local sorting  
-  // manualSorting is OMITTED/FALSE
+* **Configuration:**  TypeScript getCoreRowModel:
+  getCoreRowModel(), getSortedRowModel: getSortedRowModel(),
+  // Enables local sorting  // manualSorting is OMITTED/FALSE
 
-* **Effect:** useEffect runs once on mount. Sort state changes are handled entirely by the JS engine via getSortedRowModel.
+* **Effect:** useEffect runs once on mount. Sort state changes
+  are handled entirely by the JS engine via getSortedRowModel.
 
 ---
 
@@ -1060,12 +1335,12 @@ File: RegionTable.tsx
 
 ### **6.1 Backend**
 
-**Build Requirement:** protoc (Protocol Buffers Compiler) must be in $PATH, or available via tonic-build.
+**Build Requirement:** protoc (Protocol Buffers Compiler) must
+be in $PATH, or available via tonic-build.
 
 Bash
 
-cd backend  
-\# Compiles .proto via build.rs and starts server  
+cd backend  \# Compiles .proto via build.rs and starts server
 cargo run
 
 ### **6.2 Frontend**
@@ -1074,16 +1349,17 @@ cargo run
 
 Bash
 
-cd frontend  
-\# 1\. Install Deps  
-npm install  
-\# 2\. Generate TS Client (if proto changed)  
-npx buf generate ../proto  
-\# 3\. Start Dev Server  
-npm run dev
+cd frontend  \# 1\. Install Deps  npm install  \# 2\. Generate
+TS Client (if proto changed)  npx buf generate ../proto  \#
+3\. Start Dev Server npm run dev
 
 ## **7\. Known Limitations (PoC)**
 
-1. **Data Persistence:** Backend uses ephemeral in-memory Vec. Restarting the server resets data.  
-2. **Error Handling:** Basic Result types. Production should map Results to specific gRPC Status Codes (e.g., Status::invalid\_argument).  
-3. **Security:** No TLS/SSL implemented. Traffic is plaintext HTTP. Production requires a reverse proxy (Nginx/Envoy) or Rust TLS configuration.
+1. **Data Persistence:** Backend uses ephemeral in-memory Vec.
+Restarting the server resets data.  
+2. **Error Handling:** Basic Result types.  Production should
+map Results to specific gRPC Status Codes (e.g.,
+Status::invalid\_argument).  
+3. **Security:** No TLS/SSL implemented. Traffic is plaintext
+HTTP. Production requires a reverse proxy (Nginx/Envoy) or
+Rust TLS configuration.

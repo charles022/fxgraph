@@ -911,6 +911,102 @@ Summary
 
 
 
+-------------------------
+Detour... Apache DataFusion
+-------------------------
+    - Appache Arrow: data structure
+    - Apache DataFusion: query engine designed for database developers
+    - Apache Spark: multi-server distributed big-data processing (PBytes)
+    - ... Apache DataFusion
+    - built to be a "Lego set" for creating database systems (like Spark or
+      Snowflake)
+    - used to build data tools
+    - built around Tokio for network/IO adjacent queries, thus async operations
+    - DataFusion uses/provides lazy evaluation (so does Polars DataFrame)
+        - fxn1:
+            - input: user defined query
+            - action/output: a calculated/optimized plan for executing the query
+    - opposed to Polars DataFrame:
+        - single machine RAM
+        - multi-threaded
+        *not sure if this is actually a good comparison...*
+        * both use lazy evaluation (create query plan before executing)*
+        * both are probably multi-threaded and using RAM *
+
+
+-------------------------
+Choose Polars DataFrame if: TL;RD: faster/est
+-------------------------
+    - coming from Pandas and want that experience in Rust
+    - writing a CLI tool or a data processing script
+    - do not want to deal with async/await, Tokio, or Futures complexity
+    - need the absolute fastest performance on a single machine
+    - Polars is currently faster than Apache DataFrame in most benchmarks
+    - ...
+    - in single-node, in-memory processing tasks
+    - tasks like:
+        - reading a 50GB CSV file
+        - grouping by a column
+        - calculating the mean
+    - benchmarks like TPC-H standard, H2O.ai Database Benchmarks
+    - Polars consistently outperforms almost every other tool, including:
+        - DataFusion
+        - Spark
+        - Pandas
+    - DataFusion is built on Tokio, which adds small amount of overhead
+    - Polars uses a custom synchronous thread pool - grabs all CPU cores and
+      hammers at 100% until the math is done, avoids context-switching overhead
+      of async runtimes used to manage network latency and keeping a server
+      responsive
+    - DataFusion uses arrow-rs compute kernels
+    - Polars uses custom, often unsafe, compute kernels over the same arrow format
+    - ...
+    - Polars' lazy evaluation optimizer is aggressively tuned for local execution:
+        - incredibly good at:
+            - predicate pushdown: filtering data while reading the file so you
+              don't load unnecessary rows into RAM
+            - reordering joins to minimize the size of intermediate tables
+
+
+
+
+-------------------------
+Choose Apache DataFusion if:
+-------------------------
+    - REST API, Tokio, Async I/O
+    - building a server (e.g., a REST API) that serves data and needs to handle
+      many concurrent requests (Async I/O is crucial here).
+    - excellent SQL support out of the box
+    - need to query data sitting in Cloud Storage (S3, GCS) directly without
+      downloading it first (DataFusion's ObjectStore integration is superior).
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
     - handle massive datasets without overwhelming the browser
     - while maintaining instant interactivity for smaller,

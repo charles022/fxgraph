@@ -2,11 +2,6 @@
 
 
 
-
-
-
-
-
 Main proposal:
 -
     (Rust server) - gRPC - JS with Rust server - rkyv -
@@ -549,17 +544,14 @@ Process for Parquet as the compressed data transfer
 
 
 
--------------------------
 (revisit note section)
--------------------------
-conflicting information: which is better for sending
-compressed data over the network?
-    A) arrow ZSTD compression + Arrow IPC
-    B) buffer = parquet_table.to_parquet(compression = ZSTD)
+-
+    - conflicting information: which is better for sending compressed data over the network?
+    - A) arrow ZSTD compression + Arrow IPC
+    - B) buffer = parquet_table.to_parquet(compression = ZSTD)
 
--------------------------
 start of A (revisit note section)
--------------------------
+-
 use arrow::ipc::writer::{FileWriter, IpcWriteOptions};
 use arrow::ipc::compression::CompressionType;
 
@@ -713,202 +705,122 @@ Server API Endpoint: how to receive and use requests from the client
       correct Polars functions
     
 
+# Comparison: DataFusion vs. Polars DataFrame  
+*(Consolidated Notes)*
 
-Pure Rust -> UI: egpu
--
-    Pros:
-    - high performance dashboards, trading terminals
-    - can display intense ammounts of data cleanly
-        ie https://www.egui.rs/#clock
-    - draws everything (text, borders, buttons) onto a WebGL Canvas using GPU
-      acceleration, bypasses the browser DOM entirely.
-    - does not use HTML <table> or <div>
-    - insanely fast, can THEORETICALLY render 10,000 rows at 60FPS because it
-      is just pixels
-      on a GPU texture
-    - no "Javascript/DOM" overhead.
+---
 
-    Cons:
-    - rigid
-    - abilities would be lost on a table because creating 50,000 HTML <tr>
-      elements will freeze the browser (because the browser's rendering engine
-      is the bottleneck, not Rust). If your table is larger than ~500 rows, you
-      must implement Virtualization (or "Windowing") in Rust
+## 1) Strengths / Capabilities of DataFusion over Polars DataFrame
+- Cooperative, async-aware execution engine
+    - *Polars DataFrame does not yield during long operations.*
+- Handles workloads that must pause/resume on I/O boundaries (disk, remote
+  sources)
+    - *Polars DataFrame does not incorporate async waiting or latency-hiding
+      mechanisms.*
+- Fair scheduling across many heterogeneous queries
+    - *Polars DataFrame executes run-to-completion and does not interleave
+      workloads.*
+- Supports distributed / multi-node execution models
+    - *Polars DataFrame does not coordinate distributed or external fetch
+      operations.*
+- Streaming and incremental batch processing
+    - *Polars DataFrame does not natively support
+      streaming/partial-materialization workflows.*
 
+---
 
-    Examples:
-    - https://www.egui.rs/#clock
-    - https://emilk.github.io/egui_plot/
-    - https://github.com/emilk/egui_plot
-    - https://github.com/rerun-io/rerun
+## 2) Strengths / Capabilities of Polars DataFrame over DataFusion
+    - Maximum single-node, in-memory performance via SIMD-optimized synchronous
+      execution
+        - *DataFusion introduces async scheduling overhead.*
+    - Tight run-to-completion loops for heavy numeric workloads
+        - *DataFusion yields frequently, adding coordination costs.*
+    - Predictable throughput when the entire dataset is in RAM
+        - *DataFusion is built around the possibility of I/O waits.*
+    - Ideal when paired with a bounded Rayon compute pool
+        - *DataFusion mixes compute with async scheduling logic.*
+    - Best choice for CPU-bound workloads that never wait on external resources
+        - *DataFusion optimizes for environments where waiting is expected.*
 
-Pure Rust -> UI: leptos (+polars)
--
-    Pros: looks like a normal web app
-    Cons: not quite as high performance as egpu
-    Action: treat the Polars DataFrame as a Signal that triggers a Rust fxn
-    that reruns the Polars query then updates the HTML
+---
 
-Pure Rust -> UI: virtualization
--
-    - Calculate scroll position.
-    - Use Polars df.slice(offset, 20) to get only the 20 visible rows.
-    - Render only those 20 rows to HTML.
+## 3) Scenario Where DataFusion Is the Better Choice Use DataFusion when:
+    - The engine must request data from outside sources (disk, object stores,
+      remote nodes).  
+    - Execution involves pauses, remote fetches, or multi-stage coordination.  
+    - You need workload fairness, preventing long-running queries from
+      monopolizing resources.  
+    - You operate in or plan for a distributed or multi-node architecture.  
+    - Query execution includes natural waiting, allowing async yielding to hide
+      latency.
 
+---
 
-Island Architecture / Micro-Frontend
--
-    - integrate rust-native UI elements alongside traditional JS
-      elements
-    - rust/WASM ui compenents are embeded inside a specific <div>
+## 4) Why Polars Is Not Ideal in This Scenario
+    - Polars assumes data is already available and gains no benefit from async
+      I/O handling.  
+    - Synchronous run-to-completion can block compute threads during long
+      waits.  
+    - Polars cannot pause/resume during external fetches.  
+    - It cannot leverage distributed execution or remote orchestration.
 
-// Island Architecture / Micro-Frontend example:
+---
 
+## 5) Scenario Where Polars DataFrame Is the Better Choice Use Polars when:
+    - All data is in memory on a single node.  
+    - Workloads are purely CPU-bound, with no external dependencies.  
+    - Many clients issue requests, but each query is self-contained.  
+    - A bounded Rayon thread pool handles compute, while Tokio handles
+      networking.  
+    - The objective is maximum raw throughput per core, not distributed
+      scheduling fairness.
 
+---
 
--------------------------
-Island Architecture / Micro Front-end example
--------------------------
+## 6) Why DataFusion Is Not Advantageous in This Scenario
+    - Its async engine adds a coordination tax without providing any benefit
+    - Yielding slows down heavy computations that would run best synchronously.  
+    - Scheduling fairness is unnecessary when all queries operate solely
+      in-memory.  
+    - Distributed and I/O-aware capabilities are overkill, making DataFusion
+      slower than Polars’ optimized single-node model.
 
--------------------------
-Island Architecture: HTML
--------------------------
-
-
-<body>
-  <!-- Your existing JavaScript Navbar -->
-  <nav id="js-navbar">...</nav>
-
-  <!-- Your existing JS Content -->
-  <div class="sidebar">...</div>
-
-  <!-- THE RUST ISLAND -->
-  <!-- The Rust WASM will hunt for this ID and take it over -->
-  <div id="rust-table-root" style="height: 500px; width: 100%;"></div>
-
-  <!-- Your existing JS Footer -->
-  <footer>...</footer>
-
-  <!-- Load the WASM glue code -->
-  <script type="module">
-      import init, { mount_table } from './pkg/my_rust_app.js';
-      
-      async function run() {
-          await init(); // Initialize WASM memory
-          mount_table("rust-table-root"); // Tell Rust where to live
-      }
-      run();
-  </script>
-</body>
+---
 
 
 
 -------------------------
-Island Architecture: Rust
+Apache DataFusion v Polars DataFrame
 -------------------------
-// mount to the specific element id from the HTML setup
-
-use leptos::*;
-use wasm_bindgen::prelude::*;
-
-#[component]
-fn DataViewer() -> impl IntoView {
-    view! {
-        <table class="my-cool-rust-table">
-            // Polars rendering logic here...
-        </table>
-    }
-}
-
-// This function is exported to JavaScript
-#[wasm_bindgen]
-pub fn mount_table(element_id: &str) {
-    // Leptos helper to mount to a specific Div ID
-    mount_to(
-        document().get_element_by_id(element_id).unwrap(),
-        || view! { <DataViewer /> }
-    )
-}
-
+    - Server: use Polars DataFrame + rayon
+    - DataFusion advantage:...
+    - for when sending requests for data from other nodes / over the network
+        - uses tokio for async processing to do other things while waiting for
+          responses
+        - assumes data size from source is unknown
+    - DataFrame: advantage...
+        - use when data exists on just that node
+        - focuses all resources on task at hand
+        - optimized things like compression by assuming a known size of data
+        - wrap in tokio / rayon for when RECEIVING many requests
 
 
 -------------------------
-Island Architecture: JS/Rust
+rayon v tokio (brief)
 -------------------------
-// You likely want the JS side to control the Rust side ((e.g., a JS
-dropdown filters the Rust table) or vice versa
-// expose public functions in Rust that manipulate a global or static signal
-
--------------------------
-Island Architecture: JS/Rust (Rust portion)
--------------------------
-// Create a global signal for the filter
-static FILTER_SIGNAL: RwLock<Option<String>> = RwLock::new(None);
-
-#[wasm_bindgen]
-pub fn apply_js_filter(region_name: String) {
-    // When JS calls this, update the signal
-    // The Leptos UI will automatically re-render the table
-    let mut write = FILTER_SIGNAL.write().unwrap();
-    *write = Some(region_name);
-}
-
-
--------------------------
-Island Architecture: JS/Rust (JS portion)
--------------------------
-
-import { apply_js_filter } from './pkg/my_rust_app.js';
-
-// Your existing JS button
-document.getElementById("filter-btn").onclick = () => {
-    apply_js_filter("US-East"); // Instantly updates the Rust UI
-};
-
-
-
--------------------------
-Island Architecture: Rust -> JS Output
--------------------------
-// If a user clicks a row in the Rust table, you might want your
-React/JS app to show a modal. Rust can dispatch standard browser
-events that JS listens for.
-// Rust
-
--------------------------
-Island Architecture: Rust -> JS Output (rust portion)
--------------------------
-
-let on_row_click = move |row_id| {
-    // Create a native browser CustomEvent
-    let event = web_sys::CustomEvent::new("rust-row-selected").unwrap();
-    // Attach data
-    // Dispatch to the window
-    window().dispatch_event(&event).unwrap();
-};
-
-
--------------------------
-Island Architecture: Rust -> JS Output (js portion)
--------------------------
-
-window.addEventListener("rust-row-selected", (e) => {
-    console.log("Rust told me the user clicked a row!");
-    myReactApp.openModal();
-});
-};
-
-
-Summary
-- 
-    - React/Vue sees: A black box <div>. It doesn't care what's
-      inside.
-    - The Browser sees: Just another part of the DOM tree. The HTML
-      generated by Rust is indistinguishable from HTML generated by
-      React.
-    - The User sees: A single cohesive page, where one specific table
-      happens to sort 100x faster than the rest of the site.
-
+    - rayon:
+    ...
+    - parallel execution
+    - for CPU bound tasks
+    - execute an iterator in parallel
+    - includes balancing, if one finishes a task first, etc
+    ...
+    - tokio:
+    ...
+    - asynchronous execution
+    - for IO-bound / "waiting" tasks
+    - if waiting for something to finish, pause, work on something else, come back
+    - ie dealing with waiting for network responses
 
 
 -------------------------
@@ -968,8 +880,6 @@ Choose Polars DataFrame if: TL;RD: faster/est
             - reordering joins to minimize the size of intermediate tables
 
 
-
-
 -------------------------
 Choose Apache DataFusion if:
 -------------------------
@@ -979,6 +889,214 @@ Choose Apache DataFusion if:
     - excellent SQL support out of the box
     - need to query data sitting in Cloud Storage (S3, GCS) directly without
       downloading it first (DataFusion's ObjectStore integration is superior).
+
+
+
+Pure Rust -> UI: egpu
+-
+    Pros:
+    - high performance dashboards, trading terminals
+    - workflow for when a user sorts a table that is displayed:
+        1) Loop: The generic update() loop runs 60 times a second
+        2) Immediate Mode: In every frame, you say ui.label(row_value)
+        3) Interaction: You write if ui.button("Sort").clicked() { df.sort(...) }
+    - can display intense ammounts of data cleanly
+        ie https://www.egui.rs/#clock
+    - draws everything (text, borders, buttons) onto a WebGL Canvas using GPU
+      acceleration, bypasses the browser DOM entirely.
+    - does not use HTML <table> or <div>
+    - insanely fast, can THEORETICALLY render 10,000 rows at 60FPS because it
+      is just pixels
+      on a GPU texture
+    - no "Javascript/DOM" overhead.
+
+    Cons:
+    - rigid
+    - abilities would be lost on a table because creating 50,000 HTML <tr>
+      elements will freeze the browser (because the browser's rendering engine
+      is the bottleneck, not Rust). If your table is larger than ~500 rows, you
+      must implement Virtualization (or "Windowing") in Rust
+
+
+    Examples:
+    - https://www.egui.rs/#clock
+    - https://emilk.github.io/egui_plot/
+    - https://github.com/emilk/egui_plot
+    - https://github.com/rerun-io/rerun
+
+Pure Rust -> UI: leptos (+polars)
+-
+    Pros: looks like a normal web app
+    Cons: not quite as high performance as egpu
+    Action: treat the Polars DataFrame as a Signal that triggers a Rust fxn
+    that reruns the Polars query then updates the HTML
+
+Pure Rust -> UI: virtualization
+-
+    - Calculate scroll position.
+    - Use Polars df.slice(offset, 20) to get only the 20 visible rows.
+    - Render only those 20 rows to HTML.
+
+
+# Island Architecture / Micro-Frontend
+-
+    - integrate rust-native UI elements alongside traditional JS
+      elements
+    - rust/WASM ui compenents are embeded inside a specific <div>
+
+
+# Island Architecture # example
+-
+    - display rust visual (ie table) alongside/within a JS focused page
+    - treat the Rust/WASM component exactly like a YouTube video embed or a
+      Google Maps widget...
+        - lives inside a specific <div> on your page
+        - manages its own internal pixels
+        - coexists happily with the rest of the site
+
+
+# Island Architecture: HTML Mount Point
+-------------------------
+    - the existing HTML (or React/Vue template)
+    - designate a container where the Rust table will live
+    - index.html
+
+// index.html
+
+<body>
+  <!-- Your existing JavaScript Navbar -->
+  <nav id="js-navbar">...</nav>
+
+  <!-- Your existing JS Content -->
+  <div class="sidebar">...</div>
+
+  <!-- THE RUST ISLAND -->
+  <!-- The Rust WASM will hunt for this ID and take it over -->
+  <div id="rust-table-root" style="height: 500px; width: 100%;"></div>
+
+  <!-- Your existing JS Footer -->
+  <footer>...</footer>
+
+  <!-- Load the WASM glue code -->
+  <script type="module">
+      import init, { mount_table } from './pkg/my_rust_app.js';
+      
+      async function run() {
+          await init(); // Initialize WASM memory
+          mount_table("rust-table-root"); // Tell Rust where to live
+      }
+      run();
+  </script>
+</body>
+
+
+
+-------------------------
+Island Architecture: Rust, taking ownership
+-------------------------
+// mount to the specific element id from the HTML setup
+
+use leptos::*;
+use wasm_bindgen::prelude::*;
+
+#[component]
+fn DataViewer() -> impl IntoView {
+    view! {
+        <table class="my-cool-rust-table">
+            // Polars rendering logic here...
+        </table>
+    }
+}
+
+// This function is exported to JavaScript
+#[wasm_bindgen]
+pub fn mount_table(element_id: &str) {
+    // Leptos helper to mount to a specific Div ID
+    mount_to(
+        document().get_element_by_id(element_id).unwrap(),
+        || view! { <DataViewer /> }
+    )
+}
+
+
+
+-------------------------
+Island Architecture: js->rs Input Bridge
+-------------------------
+    - You likely want the JS side to control the Rust side ((e.g., a JS
+dropdown filters the Rust table) or vice versa
+    - expose public functions in Rust that manipulate a global or static signal
+
+-------------------------
+Island Architecture: js->rs Input Bridge (Rust)
+-------------------------
+
+// Create a global signal for the filter
+static FILTER_SIGNAL: RwLock<Option<String>> = RwLock::new(None);
+
+#[wasm_bindgen]
+pub fn apply_js_filter(region_name: String) {
+    // When JS calls this, update the signal
+    // The Leptos UI will automatically re-render the table
+    let mut write = FILTER_SIGNAL.write().unwrap();
+    *write = Some(region_name);
+}
+
+
+-------------------------
+Island Architecture: js->rs Input Bridge (JS)
+-------------------------
+
+import { apply_js_filter } from './pkg/my_rust_app.js';
+
+// Your existing JS button
+document.getElementById("filter-btn").onclick = () => {
+    apply_js_filter("US-East"); // Instantly updates the Rust UI
+};
+
+
+-------------------------
+Island Architecture: Rust -> JS Output Bridge
+-------------------------
+// If a user clicks a row in the Rust table, you might want your
+React/JS app to show a modal. Rust can dispatch standard browser
+events that JS listens for.
+// Rust
+
+-------------------------
+Island Architecture: Rust -> JS Output (Rust)
+-------------------------
+
+let on_row_click = move |row_id| {
+    // Create a native browser CustomEvent
+    let event = web_sys::CustomEvent::new("rust-row-selected").unwrap();
+    // Attach data
+    // Dispatch to the window
+    window().dispatch_event(&event).unwrap();
+};
+
+
+-------------------------
+Island Architecture: Rust -> JS Output (js)
+-------------------------
+
+window.addEventListener("rust-row-selected", (e) => {
+    console.log("Rust told me the user clicked a row!");
+    myReactApp.openModal();
+});
+};
+
+
+-------------------------
+Island Architecture: Summary
+-------------------------
+    - React/Vue sees: A black box <div>. It doesn't care what's
+      inside.
+    - The Browser sees: Just another part of the DOM tree. The HTML
+      generated by Rust is indistinguishable from HTML generated by
+      React.
+    - The User sees: A single cohesive page, where one specific table
+      happens to sort 100x faster than the rest of the site.
 
 
 

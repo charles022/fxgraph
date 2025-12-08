@@ -892,8 +892,11 @@ Choose Apache DataFusion if:
 
 
 
-Pure Rust -> UI: egpu
+Pure Rust -> UI: egui
 -
+    - ie https://www.egui.rs/#clock
+    - https://docs.rs/egui_extras/latest/egui_extras/struct.TableBuilder.html    
+    - ...
     Pros:
     - high performance dashboards, trading terminals
     - workflow for when a user sorts a table that is displayed:

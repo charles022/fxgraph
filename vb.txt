@@ -1,0 +1,432 @@
+For your Rust server → Rust/WASM client setup, “best” for high-performance updates really means:
+
+Minimize allocations + minimize copies + keep hot data in flat, predictable layouts + keep JS↔WASM crossings simple and rare.
+
+I’ll frame this specifically for your scenario and then give a concrete pattern you can use as a template.
+
+1. First decision: Snapshots vs Patches
+
+Everything hangs on this choice:
+
+A. Snapshot model (replace the whole state)
+
+Server sends a complete, self-contained state:
+
+e.g. “current prices for all 10,000 stocks” or “full table of shipping jobs”.
+
+Client treats each message as:
+
+“The truth as of timestamp T; everything before is irrelevant.”
+
+Pros
+
+Very simple logic.
+
+Easy to reason about consistency.
+
+Easy to version (add fields, change layout) as long as message format is versioned.
+
+Cons
+
+More bandwidth (entire state, every time).
+
+You either:
+
+mutate a large array in-place every time; or
+
+allocate a new one and swap (which is allocation heavy if large).
+
+Best use: Dashboards where state is not massive, and the cost of sending full state is acceptable.
+
+B. Patch model (apply deltas to a long-lived state)
+
+Server sends small change sets:
+
+e.g. “update row 123, col 4→42.0” or “entity 97 moved to (10, 5)”.
+
+Client holds a long-lived WorldState and mutates it in place.
+
+Pros
+
+Much lower bandwidth when only a small fraction changes.
+
+Very cache-friendly if you structure the world as contiguous arrays.
+
+Cons
+
+More complex logic (ordering, idempotency, conflict handling).
+
+Requires strong identity (IDs / indices) for entities.
+
+Best use: Big worlds / big tables with relatively small incremental changes.
+
+For max performance, the usual answer is:
+
+Transport: Use binary messages, not JSON.
+
+Memory layout: Use flat, contiguous arrays/SoA on the client.
+
+Updates:
+
+Use patches for big state with small changes.
+
+Optionally send full snapshots occasionally to re-sync.
+
+The rest of the recommendations assume that.
+
+2. Wire format: fixed layout, binary, versioned
+
+For high-performance updates, don’t send ad-hoc JSON like:
+
+{ "id": 123, "x": 3.14, "y": 2.71 }
+
+
+Instead, agree on a binary schema:
+
+// Shared between server and client
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct EntityUpdate {
+    pub id: u32,
+    pub x: f32,
+    pub y: f32,
+}
+
+// For a single message:
+#[repr(C)]
+pub struct UpdateHeader {
+    pub version: u16,
+    pub count: u16,
+}
+
+// Payload layout:
+// [UpdateHeader][EntityUpdate; count]
+
+
+Characteristics you want:
+
+Little-endian everywhere.
+
+#[repr(C)] on your structs.
+
+Only Pod-like fields (integers, floats, fixed arrays); no String, Vec.
+
+A version field so you can change layouts later without UB.
+
+Server side: you build these structs, then send &[u8] over the socket.
+
+Client side: you get Vec<u8> in WASM and reinterpret slices of it as &UpdateHeader and &[EntityUpdate] with bytemuck or manual pointer arithmetic.
+
+3. WASM-specific performance rules
+
+You can’t change these, so build around them:
+
+JS owns the network: WebSocket/Fetch deliver ArrayBuffer or Blob to JS.
+
+WASM has its own linear memory: Your Vec<u8>s live there.
+
+You must copy data from JS buffer → WASM buffer once per message.
+
+Therefore, the hot path should be:
+
+JS receives ArrayBuffer.
+
+JS calls into WASM with:
+
+pointer to a pre-allocated WASM buffer, or
+
+an exported “write into my buffer” function.
+
+JS copies bytes into WASM memory in one set() call.
+
+WASM:
+
+interprets those bytes as structs,
+
+applies updates in tight loops,
+
+and reuses the same message buffer next time.
+
+The performance win is:
+
+Reusing the same WASM buffer (no new Vec<u8> allocations each frame).
+
+Applying updates in tight, branch-light loops over flat arrays.
+
+4. Recommended client-side structure (patch model)
+4.1. Long-lived world in SoA layout
+
+For huge or hot state, prefer Structure of Arrays (SoA) over AoS:
+
+pub struct World {
+    // stable index → position / etc.
+    xs: Vec<f32>,
+    ys: Vec<f32>,
+    // optional: more fields (hp, velocity, etc.)
+}
+
+
+Why SoA?
+
+Massive sequential reads/writes (cache friendly).
+
+Easy vectorization if needed (SIMD) on native; on WASM you still benefit from sequential access.
+
+You also want a way to map IDs to indices:
+
+use std::collections::HashMap;
+
+pub struct World {
+    xs: Vec<f32>,
+    ys: Vec<f32>,
+    id_to_index: HashMap<u32, usize>,
+}
+
+4.2. Reusable message buffer
+
+In your WASM module:
+
+pub struct MsgBuffer {
+    buf: Vec<u8>,   // capacity reused
+}
+
+impl MsgBuffer {
+    pub fn new(max_size: usize) -> Self {
+        Self { buf: Vec::with_capacity(max_size) }
+    }
+
+    // used by JS to learn where to write:
+    pub fn as_ptr(&mut self) -> *mut u8 {
+        self.buf.as_mut_ptr()
+    }
+
+    pub fn capacity(&self) -> usize {
+        self.buf.capacity()
+    }
+
+    pub fn set_len(&mut self, len: usize) {
+        assert!(len <= self.buf.capacity());
+        unsafe { self.buf.set_len(len) }
+    }
+
+    pub fn as_bytes_mut(&mut self) -> &mut [u8] {
+        &mut self.buf[..]
+    }
+}
+
+
+JS side (pseudo):
+
+// wasmExports: WASM module exports
+const ptr = wasmExports.msg_buffer_ptr();       // pointer into WASM memory
+const cap = wasmExports.msg_buffer_capacity();
+
+socket.onmessage = (event) => {
+  const src = new Uint8Array(event.data);       // ArrayBuffer → view
+  if (src.byteLength > cap) {
+    // error or reallocate in WASM and ask again
+  }
+
+  const mem = new Uint8Array(wasmMemory.buffer);
+  const dst = mem.subarray(ptr, ptr + src.byteLength);
+  dst.set(src);                                 // single copy, JS → WASM
+
+  wasmExports.on_message(src.byteLength);
+};
+
+
+WASM on_message(len) then:
+
+Calls msg_buffer.set_len(len).
+
+Interprets those bytes.
+
+4.3. Interpreting and applying updates in WASM
+use core::mem::size_of;
+use bytemuck::{Pod, Zeroable, from_bytes, from_bytes_mut, cast_slice};
+
+#[repr(C)]
+#[derive(Clone, Copy, Zeroable, Pod)]
+pub struct UpdateHeader {
+    pub version: u16,
+    pub count: u16,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Zeroable, Pod)]
+pub struct EntityUpdate {
+    pub id: u32,
+    pub x: f32,
+    pub y: f32,
+}
+
+impl World {
+    pub fn apply_updates(&mut self, msg_buf: &mut [u8]) {
+        assert!(msg_buf.len() >= size_of::<UpdateHeader>());
+
+        let (header_bytes, body) = msg_buf.split_at_mut(size_of::<UpdateHeader>());
+        let header: &UpdateHeader = from_bytes(header_bytes);
+
+        // handle versioning if needed
+        let count = header.count as usize;
+        assert_eq!(body.len(), count * size_of::<EntityUpdate>());
+
+        let updates: &mut [EntityUpdate] = cast_slice(body);
+
+        for update in updates.iter() {
+            if let Some(&idx) = self.id_to_index.get(&update.id) {
+                // tight, contiguous writes:
+                self.xs[idx] = update.x;
+                self.ys[idx] = update.y;
+            } else {
+                // optional: add new entity
+                let idx = self.xs.len();
+                self.xs.push(update.x);
+                self.ys.push(update.y);
+                self.id_to_index.insert(update.id, idx);
+            }
+        }
+    }
+}
+
+
+Key properties:
+
+Single JS→WASM copy per message.
+
+No additional allocations in the hot path:
+
+World vectors are long-lived and only grow when necessary.
+
+MsgBuffer is reused.
+
+Update loop is a simple for over contiguous memory.
+
+This is about as “high-performance” as you reasonably get on a Rust/WASM client today.
+
+5. Snapshot variant (for smaller / simpler states)
+
+If your state is modest or you want simpler logic, the pattern is:
+
+Server sends a full snapshot (header + [EntityState; N]).
+
+Client receives snapshot into MsgBuffer.
+
+Client rebuilds World from scratch each time, or swaps whole arrays.
+
+Option 1: rebuild every time
+
+#[repr(C)]
+#[derive(Clone, Copy, Zeroable, Pod)]
+pub struct EntityState {
+    pub id: u32,
+    pub x: f32,
+    pub y: f32,
+}
+
+impl World {
+    pub fn replace_from_snapshot(&mut self, msg_buf: &mut [u8]) {
+        let (header_bytes, body) = msg_buf.split_at_mut(size_of::<SnapshotHeader>());
+        let header: &SnapshotHeader = from_bytes(header_bytes);
+        let count = header.count as usize;
+
+        let states: &[EntityState] = cast_slice(body);
+        assert_eq!(states.len(), count);
+
+        self.xs.clear();
+        self.ys.clear();
+        self.id_to_index.clear();
+
+        self.xs.reserve(count);
+        self.ys.reserve(count);
+
+        for (i, s) in states.iter().enumerate() {
+            self.xs.push(s.x);
+            self.ys.push(s.y);
+            self.id_to_index.insert(s.id, i);
+        }
+    }
+}
+
+
+Option 2: double-buffer whole world (for visual consistency):
+
+Keep two Worlds: current and next.
+
+Parse snapshot into next, then swap std::mem::swap(&mut current, &mut next).
+
+Rendering always uses current while next is being filled.
+
+This is more allocations, but still predictable and simple.
+
+6. Functional vs in-place mutation
+
+Since you lean functional, you might be tempted to:
+
+Represent state as immutable structures,
+
+Build a new state from old state + updates each time.
+
+For maximum performance in WASM:
+
+Do not allocate huge new structures every frame/tick for the raw model.
+
+Keep the core model (World arrays) mutable & in place.
+
+You can still layer functional transformations around it:
+
+Example: UI-level filtering, sorting, projections implemented as ephemeral Vec<Index> views into the core arrays.
+
+These views can be rebuilt functionally without touching the underlying model’s layout.
+
+So a nice compromise:
+
+Low-level core: in-place mutation over flat arrays (for updates and rendering).
+
+High-level view: functional transforms that produce lightweight derived data (lists of indices, etc.) on demand.
+
+7. Checklist: “Best approach” for high-performance updates
+
+Putting it all together, for your Rust server ↔ Rust/WASM client:
+
+Use binary messages with #[repr(C)] structs and version fields.
+
+Distinguish clearly between:
+
+Snapshots (full state) and
+
+Patches (small deltas).
+
+On the client:
+
+Allocate a reusable message buffer in WASM.
+
+Have JS copy WebSocket ArrayBuffer → WASM buffer once per message.
+
+Interpret bytes in WASM using bytemuck / pointer casting:
+
+from_bytes / cast_slice to avoid extra copies.
+
+Enforce size/layout checks for safety.
+
+Maintain a long-lived world in SoA form:
+
+Vec<f32>/Vec<u32> arrays, plus an id_to_index map.
+
+Apply updates in tight loops with minimal branching.
+
+Avoid:
+
+Per-message Vec/String allocations in the hot path.
+
+JSON parsing for hot updates.
+
+Extra copies into separate “structs” when you can operate directly on bytes or SoA arrays.
+
+Optionally:
+
+For rendering consistency, use double-buffering at the world level (two worlds, swap pointers) rather than at the message level.
+
+If you’d like, next step we can:
+
+Take one of your real data shapes (e.g., “table of N rows with M numeric columns”) and design the exact on-the-wire layout and the exact client update code, line-by-line, in Rust/WASM + JS scaffolding.

@@ -1,0 +1,6 @@
+
+study these notes deeply. these notes are for how we may implement data transmission from our rust server to our rust/WASM dashboard client with a light JS layer on top for some dispays.
+
+
+identify the different scenarios of data transfer
+

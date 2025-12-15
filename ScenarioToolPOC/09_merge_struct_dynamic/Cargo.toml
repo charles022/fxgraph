@@ -1,0 +1,6 @@
+[package]
+name = "scenario_09_merge_struct_dynamic"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]

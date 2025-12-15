@@ -1,0 +1,6 @@
+[package]
+name = "scenario_31_mutable_buffer_reuse"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]

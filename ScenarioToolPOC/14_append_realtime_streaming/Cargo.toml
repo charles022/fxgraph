@@ -1,0 +1,6 @@
+[package]
+name = "scenario_14_append_realtime_streaming"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]

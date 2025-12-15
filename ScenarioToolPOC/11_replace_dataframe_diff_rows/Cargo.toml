@@ -1,6 +1,0 @@
-[package]
-name = "scenario_11_replace_dataframe_diff_rows"
-version = "0.1.0"
-edition = "2024"
-
-[dependencies]

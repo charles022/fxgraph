@@ -1,6 +1,0 @@
-[package]
-name = "scenario_07_merge_table_fixed"
-version = "0.1.0"
-edition = "2024"
-
-[dependencies]

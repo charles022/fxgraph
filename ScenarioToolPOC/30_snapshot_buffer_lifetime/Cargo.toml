@@ -1,6 +1,0 @@
-[package]
-name = "scenario_30_snapshot_buffer_lifetime"
-version = "0.1.0"
-edition = "2024"
-
-[dependencies]

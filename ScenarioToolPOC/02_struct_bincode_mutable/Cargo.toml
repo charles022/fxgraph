@@ -1,6 +1,0 @@
-[package]
-name = "scenario_02_struct_bincode_mutable"
-version = "0.1.0"
-edition = "2024"
-
-[dependencies]

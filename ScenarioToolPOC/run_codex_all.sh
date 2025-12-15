@@ -12,5 +12,8 @@ for dir in "$root"/*; do
     continue
   fi
   echo "=== Running codex for $(basename "$dir") ===" >&2
-  "$CODEX_CMD" --cwd "$dir" --prompt "Use README.md in this directory to create a working proof of concept here." || true
+  (
+    cd "$dir"
+    "$CODEX_CMD" --prompt "Use README.md in this directory to create a working proof of concept here."
+  ) || true
 done

@@ -1,35 +1,23 @@
 # Scenario 1.3 – Fixed-size POD read-only via bytemuck + HTTP
 
-Server writes a fixed-layout physics state to bytes and responds over HTTP.
-```rust
-use axum::response::IntoResponse;
-use bytemuck::{Pod, Zeroable};
+Proof-of-concept: an Axum endpoint returns raw bytes for a fixed-layout `PhysicsState`, and the WASM client uses `bytemuck::from_bytes` to view the payload without parsing or allocation.
 
-#[repr(C)]
-#[derive(Copy, Clone, Pod, Zeroable)]
-pub struct PhysicsState { pub x: f32, pub y: f32, pub id: u32 }
+## Project layout
+- `shared/` – defines `PhysicsState` as a POD type (`#[repr(C)]`, `bytemuck::Pod`).
+- `server/` – Axum server exposing `GET /snapshot` and serving the static demo.
+- `client-wasm/` – `wasm-bindgen` library that casts the incoming bytes to `PhysicsState` and surfaces getters.
+- `server/static/` – HTML/JS shell that fetches `/snapshot`, calls into the wasm bundle, and renders the fields.
 
-pub async fn snapshot() -> impl IntoResponse {
-    let st = PhysicsState { x: 1.0, y: 2.0, id: 99 };
-    bytemuck::bytes_of(&st).to_vec()
-}
+## Build the WASM bundle
+Requires `wasm-pack` on your PATH.
+```bash
+wasm-pack build client-wasm --target web --out-dir ../server/static/pkg
 ```
 
-Client (Rust/WASM) casts incoming bytes directly to `&PhysicsState` with no allocation.
-```rust
-use bytemuck::from_bytes;
-use wasm_bindgen::prelude::*;
-
-#[wasm_bindgen]
-pub fn view_state(bytes: &[u8]) -> f32 {
-    let st: &PhysicsState = from_bytes(bytes);
-    st.x + st.y
-}
+## Run the server + demo
+```bash
+cargo run -p server
+# open http://127.0.0.1:3000
 ```
 
-JS fetches once and passes bytes into WASM.
-```js
-const buf = await (await fetch("/snapshot")).arrayBuffer();
-const view = new Uint8Array(buf);
-console.log("sum", view_state(view));
-```
+Click “Fetch snapshot” to pull the 12-byte struct, reinterpret it inside WASM via bytemuck, and display the id/x/y/sum.

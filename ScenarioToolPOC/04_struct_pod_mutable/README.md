@@ -1,30 +1,23 @@
 # Scenario 1.4 – Fixed-size POD mutable in place via bytemuck::from_bytes_mut
 
-Server streams a single POD struct; client mutates fields directly inside the backing buffer.
-```rust
-use axum::extract::ws::{Message, WebSocket};
-use bytemuck::{Pod, Zeroable};
+Proof-of-concept: the server pushes a single `PhysicsState` over WebSocket as raw bytes. The WASM client stores those bytes in a `Vec<u8>`, casts them with `bytemuck::from_bytes_mut`, and mutates the fields directly inside the buffer (no deserialize/serialize step).
 
-#[repr(C)]
-#[derive(Copy, Clone, Pod, Zeroable)]
-pub struct PhysicsState { pub x: f32, pub y: f32, pub id: u32 }
+## Project layout
+- `shared/` – `PhysicsState` POD type shared by server and WASM.
+- `server/` – Axum server that serves the static demo and streams one binary message on `/ws`.
+- `client-wasm/` – `wasm-bindgen` library that owns the raw buffer, exposes getters, and a `mutate_in_place()` that tweaks `x`/`y` in-place via `bytemuck::from_bytes_mut`.
+- `server/static/` – HTML/JS shell that opens the WebSocket, hands the bytes to WASM, and lets you trigger another in-place mutation.
 
-pub async fn push_state(mut ws: WebSocket) {
-    let st = PhysicsState { x: 10.0, y: 0.5, id: 1 };
-    ws.send(Message::Binary(bytemuck::bytes_of(&st).to_vec())).await.unwrap();
-}
+## Build the WASM bundle
+Prereq: `wasm-pack` on your PATH (or use `cargo build --target wasm32-unknown-unknown` + `wasm-bindgen` manually).
+```bash
+wasm-pack build client-wasm --target web --out-dir ../server/static/pkg
 ```
 
-Client (Rust/WASM) stores bytes in a Vec, then obtains a mutable view.
-```rust
-use bytemuck::from_bytes_mut;
-use wasm_bindgen::prelude::*;
-
-#[wasm_bindgen]
-pub fn adjust(buf: &mut [u8]) -> f32 {
-    let st: &mut PhysicsState = from_bytes_mut(buf);
-    st.x += 1.0;
-    st.y *= 2.0;
-    st.y
-}
+## Run the server + demo
+```bash
+cargo run -p server
+# open http://127.0.0.1:3000
 ```
+
+Click “Connect + pull snapshot” to receive the 12-byte struct, then “Mutate in WASM buffer” to update the same bytes in place. The UI reads back the fields through the WASM exports, showing that the backing buffer was mutated without re-fetching.

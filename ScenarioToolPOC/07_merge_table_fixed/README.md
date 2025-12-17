@@ -19,3 +19,21 @@ pub fn apply_patch(bytes: &[u8]) {
 ```
 
 Server simply sends an array of `Row` as raw bytes over HTTP or WebSocket; client updates in place without Polars overhead.
+
+## Proof of concept in this folder
+
+`poc/` contains a tiny Rust demo that mirrors the snippet above: a WebSocket server emits `Row` arrays as plain bytes, and a client casts them with `bytemuck::cast_slice` to overwrite the front of a 1024-slot table.
+
+Run from this folder:
+1) Start the server that sends 64-row patches every ~950 ms:
+```
+cd poc
+cargo run -- server
+```
+2) In another shell, connect the client (defaults to `ws://127.0.0.1:3000/ws`):
+```
+cd poc
+cargo run -- client
+```
+
+The client applies each binary payload directly into the fixed buffer and prints the head of the table after every patch, demonstrating in-place updates without any deserialization step.

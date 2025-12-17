@@ -2,7 +2,8 @@
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CODEX_CMD=${CODEX_CMD:-codex}
+# CODEX_CMD=${CODEX_CMD:-codex}
+# CODEX_CMD="$CODEX_CMD"" exec"
 
 for dir in "$root"/*; do
   [ -d "$dir" ] || continue
@@ -14,6 +15,6 @@ for dir in "$root"/*; do
   echo "=== Running codex for $(basename "$dir") ===" >&2
   (
     cd "$dir"
-    "$CODEX_CMD" "Use README.md in this directory to create a working proof of concept here."
+    codex exec "Use README.md in this directory to create a working proof of concept here."
   ) || true
 done

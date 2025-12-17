@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mutable POD via bytemuck</title>
+  <style>
+    :root {
+      --bg: radial-gradient(circle at 20% 20%, #1a0f24, #05040d 65%);
+      --panel: rgba(255, 255, 255, 0.03);
+      --border: rgba(255, 255, 255, 0.12);
+      --muted: #c6b8d9;
+      --accent: #ffb86c;
+      --accent-2: #7cf2c8;
+      font-family: "Sora", "Space Grotesk", "Segoe UI", system-ui, -apple-system, sans-serif;
+      color: #f5edff;
+      background: var(--bg);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 32px;
+    }
+    .card {
+      width: min(960px, 100%);
+      padding: 28px;
+      border-radius: 18px;
+      background: linear-gradient(135deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.02));
+      border: 1px solid var(--border);
+      box-shadow: 0 28px 80px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+      backdrop-filter: blur(6px);
+    }
+    h1 { margin: 0 0 10px; font-size: 26px; letter-spacing: 0.6px; }
+    p { margin: 0 0 18px; color: var(--muted); line-height: 1.6; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 14px;
+      margin: 16px 0;
+    }
+    .stat {
+      padding: 14px 16px;
+      border-radius: 12px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+    }
+    .stat label { display: block; color: var(--muted); font-size: 12px; letter-spacing: 0.4px; }
+    .stat strong { font-size: 24px; }
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+      margin-top: 12px;
+    }
+    button {
+      background: linear-gradient(120deg, var(--accent), var(--accent-2));
+      color: #160a1d;
+      border: none;
+      padding: 12px 18px;
+      border-radius: 12px;
+      font-weight: 700;
+      letter-spacing: 0.4px;
+      cursor: pointer;
+      transition: transform 120ms ease, box-shadow 160ms ease;
+      box-shadow: 0 12px 30px rgba(255, 184, 108, 0.35);
+    }
+    button:hover { transform: translateY(-1px); box-shadow: 0 16px 40px rgba(255, 184, 108, 0.45); }
+    button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
+    #status { color: var(--muted); font-size: 14px; }
+    .pill {
+      display: inline-block;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid var(--border);
+      font-size: 12px;
+      color: var(--accent-2);
+      letter-spacing: 0.3px;
+    }
+    code { color: var(--accent-2); }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="pill">WebSocket → WASM Vec<u8> → bytemuck::from_bytes_mut</div>
+    <h1>Mutable POD snapshot</h1>
+    <p>The server pushes a 12-byte <code>PhysicsState</code> once over WebSocket. The WASM client holds the raw <code>Vec&lt;u8&gt;</code>, casts it with <code>bytemuck::from_bytes_mut</code>, and mutates the fields directly inside the buffer.</p>
+    <div class="grid">
+      <div class="stat"><label>Entity ID</label><strong id="id">–</strong></div>
+      <div class="stat"><label>Position X</label><strong id="x">–</strong></div>
+      <div class="stat"><label>Position Y</label><strong id="y">–</strong></div>
+      <div class="stat"><label>Sum (x + y)</label><strong id="sum">–</strong></div>
+    </div>
+    <div class="actions">
+      <button id="connect">Connect + pull snapshot</button>
+      <button id="mutate" disabled>Mutate in WASM buffer</button>
+      <span id="status">Booting wasm…</span>
+    </div>
+  </div>
+  <script type="module" src="./app.js"></script>
+</body>
+</html>

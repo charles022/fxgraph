@@ -1,0 +1,10 @@
+[workspace]
+members = [
+    "server",
+    "client-wasm",
+    "shared",
+]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"

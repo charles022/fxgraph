@@ -35,3 +35,17 @@ pub fn append_batch(bytes: &[u8]) {
     }
 }
 ```
+
+## Proof of concept in this folder
+
+Run the small Rust demo inside `poc/`:
+1) Start the WebSocket server that emits Arrow IPC batches encoded with Polars:
+```
+cargo run --bin poc -- server
+```
+2) In another shell, connect a client that merges every incoming batch into a long-lived Polars `DataFrame` and prints the tail:
+```
+cargo run --bin poc -- client          # or provide a URL: cargo run --bin poc -- client ws://127.0.0.1:3000/ws
+```
+
+The server generates a new row every ~750 ms and streams it as an IPC message. The client decodes each IPC batch, calls `vstack_mut` to append it to the existing table, and shows the last few rows so you can see the dynamic growth.

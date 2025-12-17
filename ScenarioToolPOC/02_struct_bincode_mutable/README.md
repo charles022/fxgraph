@@ -1,41 +1,30 @@
 # Scenario 1.2 – Shared struct (Vec/String) mutable via bincode + HTTP fetch
 
-Server serializes a dynamic struct with bincode and serves it over HTTP.
-```rust
-use axum::{response::IntoResponse, Json};
-use serde::{Serialize, Deserialize};
+Proof-of-concept showing an Axum server sending a bincode-encoded struct and a WASM client that fetches, owns, and mutates it.
 
-#[derive(Serialize, Deserialize)]
-pub struct PlayerReq { pub id: u32 }
+## Project layout
+- `shared/` – `PlayerReq` and `PlayerProfile` types shared by server and client.
+- `server/` – Axum server. `POST /profile` returns a bincode payload; static files are served from `web/`.
+- `wasm_client/` – `wasm-bindgen` client exporting `pull_profile()` that fetches `/profile`, deserializes, pushes an item into the inventory, and renders it.
+- `web/index.html` – Minimal page that loads the WASM bundle from `web/pkg/` and calls `pull_profile()`.
 
-#[derive(Serialize, Deserialize)]
-pub struct PlayerProfile { pub id: u32, pub name: String, pub inventory: Vec<String> }
+## Build the WASM bundle
+Prereqs: a toolchain capable of producing `wasm32-unknown-unknown` and either `wasm-pack` or `wasm-bindgen` CLI installed locally.
 
-pub async fn profile(_: Json<PlayerReq>) -> impl IntoResponse {
-    let profile = PlayerProfile { id: 7, name: "Ash".into(), inventory: vec!["potion".into()] };
-    bincode::serialize(&profile).unwrap()
-}
+Using `wasm-pack` (recommended):
+```bash
+wasm-pack build wasm_client --target web --out-dir ../web/pkg
 ```
 
-Client (Rust/WASM) fetches, deserializes to owned data, and can mutate freely.
-```rust
-use serde::{Serialize, Deserialize};
-use wasm_bindgen::prelude::*;
-use wasm_bindgen::JsCast;
-
-#[derive(Serialize, Deserialize, Clone)]
-pub struct PlayerProfile { pub id: u32, pub name: String, pub inventory: Vec<String> }
-
-#[wasm_bindgen]
-pub async fn pull_profile() -> Result<(), JsValue> {
-    let resp_val = wasm_bindgen_futures::JsFuture::from(web_sys::window().unwrap().fetch_with_str("/profile")).await?;
-    let resp: web_sys::Response = resp_val.dyn_into()?;
-    let buf = wasm_bindgen_futures::JsFuture::from(resp.array_buffer()?).await?;
-    let bytes = js_sys::Uint8Array::new(&buf);
-    let owned: PlayerProfile = bincode::deserialize(&bytes.to_vec()).unwrap();
-    mutate_inventory(owned);
-    Ok(())
-}
-
-fn mutate_inventory(mut p: PlayerProfile) { p.inventory.push("ultra-ball".into()); }
+Using `cargo` + `wasm-bindgen` manually:
+```bash
+cargo build -p wasm_client --target wasm32-unknown-unknown --release
+wasm-bindgen --target web --out-dir web/pkg target/wasm32-unknown-unknown/release/wasm_client.wasm
 ```
+
+## Run the server + page
+```bash
+cargo run -p server
+# open http://127.0.0.1:3000
+```
+Click “Pull profile” to fetch the bincode payload, deserialize it in the browser, mutate the inventory, and display it on the page.

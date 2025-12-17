@@ -24,3 +24,21 @@ pub fn apply_telemetry(bytes: &mut [u8]) {
     }
 }
 ```
+
+## Proof of concept in this folder
+
+`poc/` is a small Rust demo that mirrors the snippet above. A WebSocket server emits raw `TelemetryDelta` bytes; the client casts them with `bytemuck::try_from_bytes`, mutates a long-lived `Telemetry`, and prints the updated numbers.
+
+Run from this folder:
+1) Start the server that streams binary deltas every ~950 ms:
+```
+cd poc
+cargo run -- server
+```
+2) In another shell, connect the client (defaults to `ws://127.0.0.1:3000/ws`):
+```
+cd poc
+cargo run -- client
+```
+
+You should see CPU/memory counters grow steadily as each POD delta is merged directly into the fixed struct without any deserialization overhead.

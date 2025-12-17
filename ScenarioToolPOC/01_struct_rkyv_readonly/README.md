@@ -40,3 +40,23 @@ const ws = new WebSocket("wss://example/ws");
 ws.binaryType = "arraybuffer";
 ws.onmessage = ({ data }) => ingest_snapshot(new Uint8Array(data));
 ```
+
+## Proof of concept in this repo
+
+- `server/`: axum server that streams an archived `GameState` every second over `/ws` and serves the static demo UI.
+- `client-wasm/`: wasm-bindgen library that validates the archive with rkyv and exposes getters to JS without copying.
+- `server/static/`: HTML/JS shell that wires a WebSocket to the wasm bindings and renders the score/positions.
+
+### Build the wasm client
+Requires [`wasm-pack`](https://rustwasm.github.io/wasm-pack/).
+```bash
+wasm-pack build client-wasm --target web --out-dir ../server/static/pkg
+```
+
+### Run the server + demo
+```bash
+cargo run -p server
+# open http://localhost:3000 in a browser
+```
+
+Every WebSocket client receives a new snapshot once per second with animated positions. The client validates the archive bytes and surfaces `score()`/`positions_len()`/`position(idx)` to JS.

@@ -1,3 +1,0 @@
-[workspace]
-members = ["shared", "server", "wasm_client"]
-resolver = "2"

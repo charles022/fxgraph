@@ -24,24 +24,10 @@ This repository primarily serves as the **Architecture Design and Proof-of-Conce
     *   `DataTransferToolMap.md`: Decision matrix mapping scenarios to the best tools (e.g., "Use Arrow IPC for Tables, rkyv for Structs").
     *   `notes_implementation.md`: Detailed engineering notes and tradeoffs (Polars vs. DataFusion, etc.).
 
-*   **`scratch/` Directory:**
-    *   Contains the actual code implementations and experiments.
-    *   `scratch/ScenarioToolPOC/`: A collection of isolated, runnable POCs for each scenario (e.g., `01_struct_rkyv_readonly`, `06_merge_table_dynamic`).
-    *   `scratch/manual_arrowrs_examples.rs`: Standalone examples of using `arrow-rs` directly without Polars.
+*   **Reference Code:**
+    *   `manual_arrowrs_examples.rs`: Standalone examples of using `arrow-rs` directly without Polars. Kept for future reference.
 
 ## Development & Usage
-
-### Running Proof-of-Concepts (POCs)
-The actual code resides in `scratch/ScenarioToolPOC/`. Each subdirectory represents a specific architectural pattern.
-
-**General Workflow for POCs:**
-1.  Navigate to the specific scenario directory:
-    ```bash
-    cd scratch/ScenarioToolPOC/<scenario_directory>
-    ```
-2.  Consult the local `README.md` in that directory. Most require:
-    *   **Building WASM:** `wasm-pack build client-wasm --target web --out-dir ...`
-    *   **Running Server:** `cargo run -p server`
 
 ### Key Architectural Patterns
 When implementing new features, adhere to the patterns defined in `DataTransferToolMap.md`:

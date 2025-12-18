@@ -1,12 +1,6 @@
-
-
-
-
 Main proposal:
 -
-    (Rust server) - gRPC - JS with Rust server - rkyv -
-    Rust/WASM
-
+    Rust (server) to Rust/WASM (client) to JS UI (client)
 
 Proposed Rust + WASM approach:
     - Rust Server: Dumps memory directly to a binary stream
@@ -19,7 +13,7 @@ Proposed Rust + WASM approach:
 (( alternate to the current... )) ((  - Rust Server: Converts
 Rust Struct -> Protobuf Binary.)) ((  - Network: Transmits
 Protobuf (often wrapped in gRPC-Web text/base64 framing). ))
-((
+(( 
 - JS Client: Parses Protobuf $\rightarrow$ JavaScript Objects.
   ))
 
@@ -29,7 +23,6 @@ Protobuf (often wrapped in gRPC-Web text/base64 framing). ))
 - allows us to use **serialization** formats that are strictly
   coupled to code
     - (extremely fast, faster than gRPC)
-
 
 
 Why is this faser han gRPC?
@@ -124,8 +117,6 @@ Summary/notes:
           server │   ├── Cargo.toml │   └── src │   └── ___.rs
           ├── client │   ├── Cargo.toml │   └── src │  
           └── ___.rs └── ...
-
-
 
 
 
@@ -416,7 +407,7 @@ Arrow Purist: client side - compressed data transfer - Rust code
 -
     - reader auto-detects compression as long as the feature
       is enabled in Cargo.toml, dont need to change reading
-      logic // client Cargo.toml [dependencies] arrow = {
+      logic // client Cargo.toml [dependencies] arrow = { 
           version = "53.0", features = ["ipc_compression"] }
 
 
@@ -543,7 +534,6 @@ Process for Parquet as the compressed data transfer
     - client uses pl.readParquet(buffer)
 
 
-
 (revisit note section)
 -
     - conflicting information: which is better for sending compressed data over the network?
@@ -602,7 +592,6 @@ pub fn send_large_history(df: &mut DataFrame) -> Vec<u8> {
 -------------------------
 end of B (revisit note section)
 -------------------------
-
 
 
 
@@ -674,7 +663,6 @@ Arrow Builders: Potential Hybrid Efficient Approach to aggregating data cleanly 
         list of chunks
         *3)* allocate a new Builder
         4) repeat
-
 
 
 
@@ -999,8 +987,8 @@ Island Architecture: Rust, taking ownership
 -------------------------
 // mount to the specific element id from the HTML setup
 
-use leptos::*;
-use wasm_bindgen::prelude::*;
+use leptos::*
+use wasm_bindgen::prelude::*
 
 #[component]
 fn DataViewer() -> impl IntoView {
@@ -1027,7 +1015,7 @@ pub fn mount_table(element_id: &str) {
 Island Architecture: js->rs Input Bridge
 -------------------------
     - You likely want the JS side to control the Rust side ((e.g., a JS
-dropdown filters the Rust table) or vice versa
+ dropdown filters the Rust table) or vice versa
     - expose public functions in Rust that manipulate a global or static signal
 
 -------------------------
@@ -1104,7 +1092,6 @@ Island Architecture: Summary
 
 
 
-
 state updates - repurpose the buffer
 -
     - for fixed size data
@@ -1139,7 +1126,6 @@ struct FixedGameState {
     3. Client...
         let state: &FixedGameState = bytemuck::from_bytes(&buffer);
     4. instant access, no rkyv overhead, no relative pointers, just a raw view
-
 
 
 transmission decision tree
@@ -1271,7 +1257,7 @@ state.id = 99;
     - JS Allocation: The browser creates a Blob or ArrayBuffer in the JS Heap
       (100MB) and fires the onmessage event.
     - WASM Copy: You copy that data into WASM memory (another 100MB).
-    - The Spike: For that brief moment during the copy, you are using 200MB+
+    - The Spike: For that brief moment during the copy, you are using 200MB+ 
       of RAM.
     - GC: Eventually, the JS Garbage Collector cleans up the first 100MB, but
       the damage (allocating a massive contiguous block) is already done.
@@ -1304,13 +1290,13 @@ state.id = 99;
       bodies with minimal GC overhead.
 
 
-
 # Direct-to-Memory Assmebly Implementation: Rust/WASM
-use wasm_bindgen::prelude::*;
+use wasm_bindgen::prelude::*
 
 #[wasm_bindgen]
 pub struct DataReceiver {
-    buffer: Vec<u8>,}
+    buffer: Vec<u8>,
+}
 
 #[wasm_bindgen]
 impl DataReceiver {
@@ -1363,6 +1349,170 @@ async function downloadLargeStruct(url) {
 
 
 
+High-Frequency Updates: Structure of Arrays (SoA)
+-
+    - For dashboards tracking thousands of individual items (tickers, sensors)
+    - Instead of `Vec<RowStruct>`, use parallel `Vec<Field>`
+    - Benefits:
+        - Cache locality (sequential reads/writes)
+        - SIMD optimizations naturally available
+        - Zero serialization overhead when mapped to ID indices
+    - Implementation:
+        struct DashboardState {
+            // Stable index -> Value
+            prices: Vec<f32>,
+            volumes: Vec<u64>,
+            // Map EntityID -> Index
+            id_to_index: HashMap<u32, usize>,
+        }
 
-# end of notes
+High-Frequency Updates: The MsgBuffer Pattern
+-
+    - Critical for WebSocket patches (50ms updates)
+    - Avoid allocating a new `Vec<u8>` for every message
+    - Pre-allocate one buffer in WASM, expose pointer to JS
+    - JS writes directly to this memory, WASM re-interprets it
+    
+    // Rust (WASM)
+    pub struct MsgBuffer { buf: Vec<u8> }
+    impl MsgBuffer {
+        pub fn as_ptr(&mut self) -> *mut u8 { self.buf.as_mut_ptr() }
+        pub fn set_len(&mut self, len: usize) { 
+            unsafe { self.buf.set_len(len) } 
+        }
+    }
+    
+    // JS (Hot Loop)
+    socket.onmessage = (event) => {
+        const src = new Uint8Array(event.data);
+        // Direct copy to WASM heap, zero allocs in WASM
+        wasmView.set(src, ptr); 
+        wasm_exports.on_message(src.byteLength);
+    };
 
+High-Frequency Updates: Snapshot vs. Patch Model
+-
+    - Snapshot:
+        - Replace entire state (Good for initial load or low-freq refresh)
+        - Simple logic, higher bandwidth
+    - Patch (Delta):
+        - Update specific indices (Good for real-time tickers)
+        - Wire Format: Binary, fixed layout, `repr(C)`
+        - strictly versioned fields
+    
+    #[repr(C)]
+    struct UpdateHeader { version: u16, count: u16 }
+    
+    #[repr(C)]
+    struct RowUpdate { id: u32, col_idx: u8, value: f32 }
+    // Payload: [Header][RowUpdate; N]
+
+High-Frequency Updates: Visual Consistency (Double Buffering)
+-
+    - Prevent UI flickering or "tearing" (showing half-updated state)
+    - Keep two `World` states: `Current` (Rendered) and `Next` (Writing)
+    - Apply patches/snapshots to `Next`
+    - Pointer swap when complete
+    - `std::mem::swap(&mut current, &mut next)`
+
+High-Frequency Updates: Functional vs. In-Place Mutation
+-
+    - Rust/WASM Performance Rule:
+        - DO NOT create new immutable state objects every frame (GC pressure)
+        - DO NOT follow "Redux-style" full object recreation
+    - Strategy:
+        - Core Data (SoA Vectors): Mutable, In-Place updates (Fastest)
+        - UI Views (Filters/Sorts): Ephemeral `Vec<usize>` indices created on demand
+        - "Functional shell, Imperative core"
+
+
+Hybrid Data Transport Strategy: Parquet vs. Arrow IPC
+-
+    - Initial Load / Historical Data (Cold Data):
+        - Format: **Parquet** (with ZSTD compression).
+        - Method: Server serializes DataFrame to Parquet bytes; Client reads via `pl.read_parquet`.
+        - Why: Maximizes bandwidth efficiency for large bulk transfers; compression outweighs CPU cost here.
+        - Server Code:
+            ```rust
+            ParquetWriter::new(&mut buffer)
+                .with_compression(ParquetCompression::Zstd(None))
+                .finish(df).unwrap();
+            ```
+    - Real-Time Updates (Hot Data):
+        - Format: **Arrow IPC Stream** (Uncompressed).
+        - Method: Server writes RecordBatch to IPC Stream; Client reads via `pl.read_ipc_stream`.
+        - Why: Minimizes latency. Compression CPU overhead is avoided for small, high-frequency updates. "Zero-copy" ingestion.
+        - Server Code:
+            ```rust
+            IpcStreamWriter::new(&mut buffer).finish(df).unwrap();
+            ```
+
+Double Buffering Strategy (The "Hybrid Memory Model")
+-
+    - Problem: Polars DataFrames are immutable; `vstack`ing every row fragments memory.
+    - Solution:
+        1. **The Buffer:** Incoming rows are held in an Arrow Builder (mutable, pre-allocated `Int32Builder`, etc.) or a small temporary DataFrame.
+        2. **The Flush:** When buffer hits threshold (e.g., 1,000 rows or 500ms), seal it (finish).
+        3. **The Merge:** `MainDataFrame.vstack(BufferDataFrame)` to append pointers (O(1) operation).
+        4. **The Maintenance:** Periodically trigger `MainDataFrame.rechunk()` (e.g., every 100 flushes) to defragment memory for query performance.
+
+Island Architecture: The Bridge Details
+-
+    - Concept: Embed Rust/WASM component into existing JS app via a specific DOM ID (e.g., `<div id="rust-root">`).
+    - **JS -> Rust (Input):**
+        - Expose public functions in Rust that manipulate a global `static RwLock` or Signal.
+        - Rust:
+            ```rust
+            #[wasm_bindgen]
+            pub fn apply_filter(val: String) { FILTER_SIGNAL.write().unwrap() = val; }
+            ```
+        - JS: `import { apply_filter } from './pkg/app.js'; apply_filter("US");`
+    - **Rust -> JS (Output):**
+        - Dispatch standard DOM CustomEvents from Rust.
+        - Rust:
+            ```rust
+            let event = web_sys::CustomEvent::new("row-clicked").unwrap();
+            window().dispatch_event(&event).unwrap();
+            ```
+        - JS: `window.addEventListener("row-clicked", (e) => { ... });`
+
+Client-Side Pivot Table Architecture
+-
+    - **The State (Rust):**
+        ```rust
+        struct PivotConfig {
+            row_field: String,
+            col_field: Option<String>,
+            val_field: String,
+            agg_type: AggregationType
+        }
+        ```
+    - **The Engine:** Run `df.pivot(...)` or `df.group_by(...)` in WASM whenever `PivotConfig` changes.
+    - **The View:** Render the resulting (smaller) DataFrame as a standard HTML table using Leptos/Yew.
+    - **Advanced:** Drill-down by capturing cell clicks and filtering the raw `source_df` to show underlying records.
+
+Decision Matrix: Manual Arrow vs. Polars
+-
+    - **Scenario A: The "Smart Table"** (Display grid, simple text filter/sort)
+        - Use: **Raw Arrow (`arrow-rs`)**.
+        - Why: Tiny WASM binary (<1MB). `arrow::compute` kernels (sort, filter) are sufficient.
+    - **Scenario B: The "Data Analyst"** (Aggregations, Pivot, Complex filtering)
+        - Use: **Polars**.
+        - Why: Implementing "Group By" in raw Arrow is too complex. Binary size penalty (~3MB) is worth the capabilities.
+
+Server "Interactive Component" (Axum Example)
+-
+    - Concept: Compiled Rust server listens for "recipes" (parameters), not code.
+    - Implementation:
+        ```rust
+        // Interactive Handler
+        async fn get_top_rows(
+            Query(params): Query<Params>,
+            state: State<Arc<Mutex<DataFrame>>>
+        ) -> impl IntoResponse {
+            let df = state.lock().unwrap();
+            // Dynamic execution based on request
+            let result = df.head(Some(params.limit));
+            convert_to_ipc(result)
+        }
+        ```

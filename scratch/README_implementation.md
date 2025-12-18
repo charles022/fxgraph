@@ -1,17 +1,6 @@
-# fxgraph: High-Performance Rust/WASM Dashboard Architecture
 
-## 1. Vision & Core Philosophy
 
-**fxgraph** is a high-performance dashboard platform built on a **Rust Server** and **Rust/WASM Client** architecture. Unlike traditional Single Page Applications (SPAs) that rely heavily on JavaScript, we treat the browser primarily as a runtime for WebAssembly, utilizing JavaScript only for the necessary "bridge" to browser APIs.
-
-### Key Tenets
-*   **Single Language:** Business logic is written in Rust and shared via common crates between the server and the WASM client.
-*   **Zero-Copy & Zero-Parse:** We reject JSON and Protobuf in the browser. Instead, we favor memory layouts (Arrow, rkyv, POD) that map directly from network bytes to Rust structures without CPU-intensive parsing or allocation.
-*   **Eliminate the "Bridge Tax":** By keeping data in WASM linear memory, we avoid the heavy cost of JavaScript Garbage Collection (GC) and the overhead of serializing/deserializing across the WASM<->JS boundary.
-
----
-
-## 2. The Data Pipeline
+## 1. The Data Pipeline
 
 We do not use a "one size fits all" REST API. Instead, we select the optimal transport and encoding based on the data shape and frequency.
 
@@ -29,7 +18,7 @@ We do not use a "one size fits all" REST API. Instead, we select the optimal tra
 
 ---
 
-## 3. Tabular Data & Analytics
+## 2. Tabular Data & Analytics
 
 The core of the dashboard is powered by **Polars** and **Apache Arrow** running inside the WASM client.
 
@@ -41,7 +30,7 @@ The core of the dashboard is powered by **Polars** and **Apache Arrow** running 
 
 ---
 
-## 4. UI & Rendering Strategy
+## 3. UI & Rendering Strategy
 
 We aim to bypass the slow DOM wherever performance is critical.
 
@@ -51,7 +40,7 @@ We aim to bypass the slow DOM wherever performance is critical.
 
 ---
 
-## 5. Architectural Comparison
+## 4. Architectural Comparison
 
 ### Why not JSON?
 JSON requires parsing text into thousands of small JavaScript objects (Object, Array, String). This creates massive **GC Pressure**, causing frame drops and lag. Our binary approach allocates a single buffer in WASM memory that the JS GC ignores.

@@ -2,21 +2,6 @@ Main proposal:
 -
     Rust (server) to Rust/WASM (client) to JS UI (client)
 
-Proposed Rust + WASM approach:
-    - Rust Server: Dumps memory directly to a binary stream
-      (Serialization)
-    - Network: Transmits raw bytes.
-    - WASM Client: Loads bytes directly back into Rust Structs
-      (Deserialization).
-        - no deserialization if using rkyv, zero-copy
-
-(( alternate to the current... )) ((  - Rust Server: Converts
-Rust Struct -> Protobuf Binary.)) ((  - Network: Transmits
-Protobuf (often wrapped in gRPC-Web text/base64 framing). ))
-(( 
-- JS Client: Parses Protobuf $\rightarrow$ JavaScript Objects.
-  ))
-
 - use/control both ends with the same language (Rust)...
 - share the exact struct definitions via a common library
   (crate)...
@@ -46,7 +31,7 @@ Zero-Copy possible using rkyv (pronounced "archive")
       without the CPU doing any work to "parse" it.
 
 
-Current Architecture (gRPC + JS):
+Old Architecture (gRPC + JS):
 -
     - Protocol - gRPC-Web
     - Serialization - Protocol Buffers - compact but requires

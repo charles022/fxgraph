@@ -1,0 +1,10 @@
+[package]
+name = "fxgraph-shared"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+# "ipc" is crucial for data transfer described in notes. 
+# "lazy" is standard. "serde" enables Struct serialization if we embed structs.
+polars = { version = "0.45", default-features = false, features = ["serde"] }
